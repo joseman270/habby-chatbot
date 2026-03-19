@@ -14,7 +14,7 @@ async function fetchProperties() {
   }
 
   /* RealHomes expone el CPT "property" en el WP REST API */
-  const url = `${WP_URL}/wp-json/wp/v2/property?per_page=${MAX_PROPS}&status=publish&_embed=true`;
+  const url = `${WP_URL}/wp-json/wp/v2/propiedad?per_page=${MAX_PROPS}&status=publish&_embed=true`;
 
   const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
   if (!res.ok) throw new Error(`WP REST API error: ${res.status}`);
