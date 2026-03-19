@@ -21,7 +21,7 @@ Ve a: **Vercel → tu proyecto → Settings → Environment Variables**
 
 | Variable | Valor |
 |---|---|
-| `CLAUDE_API_KEY` | Tu clave de console.anthropic.com |
+| `GROQ_API_KEY` | Tu clave de console.groq.com |
 | `WP_URL` | `https://habita.pe` |
 | `WHATSAPP_NUMBER` | `51987654321` (sin +) |
 | `MAX_PROPERTIES` | `20` |

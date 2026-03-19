@@ -1,7 +1,6 @@
 const { fetchProperties, propertiesToContext } = require('./properties');
 
-const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY || '';
-const WHATSAPP       = process.env.WHATSAPP_NUMBER || '51999999999';
+const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,19 +9,16 @@ module.exports = async (req, res) => {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Método no permitido.' });
-  if (!CLAUDE_API_KEY) {
-    return res.status(500).json({
-      error: 'CLAUDE_API_KEY no configurada. Ve a Vercel → Settings → Environment Variables.'
-    });
+
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(500).json({ error: 'GROQ_API_KEY no configurada en Vercel.' });
   }
 
-  /* ── Leer mensajes ── */
   const { messages } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Se requiere el campo messages.' });
   }
 
-  /* ── Sanitizar historial (máx 20 turnos) ── */
   const history = messages
     .slice(-20)
     .map(m => ({
@@ -31,21 +27,16 @@ module.exports = async (req, res) => {
     }))
     .filter(m => m.content);
 
-  if (!history.length) {
-    return res.status(400).json({ error: 'Mensaje vacío.' });
-  }
+  if (!history.length) return res.status(400).json({ error: 'Mensaje vacío.' });
 
-  /* ── Obtener inmuebles (con cache) ── */
   let propertiesContext = 'No se pudieron cargar los inmuebles en este momento.';
   try {
     const props = await fetchProperties();
     propertiesContext = propertiesToContext(props);
   } catch (err) {
-    console.warn('[Habby] No se pudo leer WP REST API:', err.message);
-    /* El chat sigue funcionando aunque WP esté caído */
+    console.warn('[Habby] WP REST API caído:', err.message);
   }
 
-  /* ── System prompt ── */
   const waUrl = `https://wa.me/${WHATSAPP}`;
   const systemPrompt = `Eres Habby, el asistente virtual de Habita Perú, una agencia inmobiliaria especializada en la compra, venta y alquiler de inmuebles en Perú.
 
@@ -59,58 +50,65 @@ Eres un asesor inmobiliario experto, amigable y profesional. Ayudas a las person
 ## PERSONALIDAD
 - Cálido, cercano y profesional
 - Español peruano natural (sin ser forzado)
-- Respuestas concisas pero completas — sin textos larguísimos
+- Respuestas concisas pero completas
 - Cuando recomiendas una propiedad, incluye siempre el link URL
-- Si no hay propiedades que coincidan exactamente, sugiere las más cercanas y explica por qué
+- Si no hay propiedades que coincidan exactamente, sugiere las más cercanas
 
 ## REGLAS IMPORTANTES
-1. SOLO hablas de inmuebles y temas relacionados (precios, zonas, proceso de compra/alquiler, documentos, etc.)
+1. SOLO hablas de inmuebles y temas relacionados
 2. Si preguntan algo fuera del ámbito inmobiliario, redirige amablemente
 3. NUNCA inventes propiedades, precios ni datos que no estén en el listado
-4. Si no tienes la información exacta, sé honesto y deriva al asesor humano
-5. Usa emojis con moderación — 📍🏠💰 son apropiados, no abuses
+4. Si no tienes la información exacta, deriva al asesor humano
+5. Usa emojis con moderación — 📍🏠💰
 
 ## CONTACTO DIRECTO CON ASESOR
-Cuando el usuario quiera hablar con un asesor o agendar visita, usa este link de WhatsApp:
+Cuando el usuario quiera hablar con un asesor o agendar visita:
 ${waUrl}
 
 ## CATÁLOGO ACTUAL DE HABITA.PE
 ${propertiesContext}
 
 ## FORMATO
-- Usa listas cortas cuando presentes múltiples propiedades
-- Para cada propiedad: nombre, precio, ubicación, características clave y URL
-- Cierra con una pregunta corta para seguir ayudando, cuando sea natural`;
+- Listas cortas para múltiples propiedades
+- Por propiedad: nombre, precio, ubicación, características y URL
+- Cierra con una pregunta corta para seguir ayudando`;
 
-  /* ── Llamada a Claude ── */
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Content-Type':      'application/json',
-        'x-api-key':         CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model:      'claude-sonnet-4-20250514',
+        model:      'llama-3.3-70b-versatile',
         max_tokens: 1024,
-        system:     systemPrompt,
-        messages:   history,
+        messages:   [
+          { role: 'system', content: systemPrompt },
+          ...history,
+        ],
       }),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('[Habby] Claude API error:', data);
-      return res.status(502).json({ error: data?.error?.message || 'Error de la API de Claude.' });
+      const rawError = data?.error?.message || 'Error de Groq.';
+      const lower = String(rawError).toLowerCase();
+      const isCreditIssue = /credit|saldo|insufficient|payment|required/.test(lower);
+      const userMessage = isCreditIssue
+        ? `El servicio de IA está temporalmente sin saldo. Puedes hablar con un asesor aquí: ${waUrl}`
+        : rawError;
+
+      console.error('[Habby] Groq error:', data);
+      return res.status(502).json({ error: userMessage });
     }
 
-    const reply = data.content?.[0]?.text || '';
+    const reply = data.choices?.[0]?.message?.content || '';
     res.json({ reply });
 
   } catch (err) {
     console.error('[Habby] Fetch error:', err);
-    res.status(502).json({ error: 'Error de conexión con la IA. Intenta de nuevo.' });
+    res.status(502).json({ error: 'Error de conexión. Intenta de nuevo.' });
   }
 };
