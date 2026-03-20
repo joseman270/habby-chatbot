@@ -8,6 +8,10 @@
 
   /* ── Configuración ── */
   const API_URL      = 'https://habby-chatbot.vercel.app/api/chat';
+  const API_BASE     = API_URL.replace(/\/chat$/, '');
+  const LEADS_URL    = `${API_BASE}/leads`;
+  const AVAIL_URL    = `${API_BASE}/availability`;
+  const APPT_URL     = `${API_BASE}/appointments`;
   const PRIMARY      = '#1B4FD8';
   const PRIMARY_DK   = '#1540B8';
   const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.\n\n¿En qué te puedo ayudar hoy?';
@@ -15,13 +19,19 @@
     '¿Qué propiedades tienen?',
     'Busco depa para comprar',
     'Quiero alquilar un inmueble',
-    'Hablar con un asesor',
+    'Quiero agendar una cita',
   ];
 
   /* ── Estado ── */
   let open    = false;
   let loading = false;
   let history = [];
+  let booking = {
+    active: false,
+    step: null,
+    leadId: null,
+    data: {},
+  };
 
   /* ── Inyectar estilos ── */
   const style = document.createElement('style');
@@ -142,6 +152,199 @@
     scroll();
   }
 
+  function addChoices(text, choices) {
+    const w = document.createElement('div');
+    w.className = 'hb-msg bot';
+    const b = document.createElement('div');
+    b.className = 'hb-bbl';
+    b.innerHTML = md(text);
+    w.appendChild(b);
+
+    const qrs = document.createElement('div');
+    qrs.className = 'hb-qrs';
+    choices.forEach(choice => {
+      const q = document.createElement('button');
+      q.className = 'hb-qr';
+      q.textContent = choice.label;
+      q.onclick = () => {
+        qrs.remove();
+        if (choice.onClick) choice.onClick();
+      };
+      qrs.appendChild(q);
+    });
+    w.appendChild(qrs);
+
+    msgs.appendChild(w);
+    scroll();
+  }
+
+  function isBookingIntent(text) {
+    return /(agendar|agenda|cita|visita|reunion)/i.test(text);
+  }
+
+  function resetBooking() {
+    booking = { active: false, step: null, leadId: null, data: {} };
+  }
+
+  function startBookingFlow() {
+    booking.active = true;
+    booking.step = 'name';
+    booking.data = {};
+    booking.leadId = null;
+    addMsg('bot', 'Perfecto. Te ayudo a agendar una cita. Primero, ¿cuál es tu nombre completo?');
+  }
+
+  async function createLeadAndOfferSlots() {
+    showTyping();
+    try {
+      const leadRes = await fetch(LEADS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: booking.data.name,
+          phone: booking.data.phone,
+          email: booking.data.email || null,
+          operation: booking.data.operation || null,
+          district: booking.data.district || null,
+        }),
+      });
+      const leadData = await leadRes.json();
+      if (!leadRes.ok || !leadData?.lead?.id) {
+        throw new Error(leadData?.error || 'No se pudo registrar el lead.');
+      }
+
+      booking.leadId = leadData.lead.id;
+
+      const availRes = await fetch(`${AVAIL_URL}?days=7&slot_minutes=30`);
+      const availData = await availRes.json();
+      if (!availRes.ok) {
+        throw new Error(availData?.error || 'No se pudo consultar disponibilidad.');
+      }
+
+      const slots = (availData.slots || []).slice(0, 6);
+      hideTyping();
+
+      if (!slots.length) {
+        addMsg('bot', 'Por ahora no tengo horarios libres en los próximos días. ¿Deseas que te escriba cuando se libere uno?');
+        resetBooking();
+        return;
+      }
+
+      const choices = slots.map(slot => {
+        const label = new Date(slot.starts_at).toLocaleString('es-PE', {
+          timeZone: 'America/Lima',
+          weekday: 'short',
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).replace(',', '');
+
+        return {
+          label,
+          onClick: () => reserveSlot(slot),
+        };
+      });
+
+      addChoices('Excelente. Elige uno de estos horarios disponibles:', choices);
+    } catch (err) {
+      hideTyping();
+      addMsg('bot', `⚠️ ${String(err.message || err)}`);
+      resetBooking();
+    }
+  }
+
+  async function reserveSlot(slot) {
+    showTyping();
+    try {
+      const res = await fetch(APPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: booking.leadId,
+          starts_at: slot.starts_at,
+          ends_at: slot.ends_at,
+          channel: 'videollamada',
+          notes: 'Cita agendada desde widget',
+        }),
+      });
+
+      const data = await res.json();
+      hideTyping();
+
+      if (!res.ok) {
+        addMsg('bot', `⚠️ ${data?.error || 'No se pudo agendar la cita.'}`);
+        if (res.status === 409) {
+          await createLeadAndOfferSlots();
+        }
+        return;
+      }
+
+      addMsg('bot', data.uiMessage || 'Tu cita fue agendada correctamente.');
+      if (data.email?.sent) {
+        addMsg('bot', 'También envié la confirmación a tu correo.');
+      }
+      resetBooking();
+    } catch {
+      hideTyping();
+      addMsg('bot', '⚠️ No se pudo agendar por un error de conexión. Intenta de nuevo.');
+      resetBooking();
+    }
+  }
+
+  async function handleBookingStep(text) {
+    if (booking.step === 'name') {
+      booking.data.name = text.slice(0, 120);
+      booking.step = 'phone';
+      addMsg('bot', 'Gracias. Ahora compárteme tu número de celular.');
+      return true;
+    }
+
+    if (booking.step === 'phone') {
+      const only = text.replace(/\D/g, '');
+      if (only.length < 7) {
+        addMsg('bot', 'Necesito un número válido. Intenta nuevamente con tu celular.');
+        return true;
+      }
+      booking.data.phone = text.slice(0, 40);
+      booking.step = 'email';
+      addMsg('bot', 'Perfecto. ¿Cuál es tu correo? Si no deseas compartirlo, escribe "omitir".');
+      return true;
+    }
+
+    if (booking.step === 'email') {
+      const lower = text.toLowerCase();
+      if (lower !== 'omitir' && !/^\S+@\S+\.\S+$/.test(text)) {
+        addMsg('bot', 'El correo parece inválido. Escribe uno válido o escribe "omitir".');
+        return true;
+      }
+      booking.data.email = lower === 'omitir' ? null : text.slice(0, 180);
+      booking.step = 'operation';
+      addChoices('¿Qué tipo de operación estás buscando?', [
+        { label: 'Comprar', onClick: () => send('Comprar') },
+        { label: 'Alquilar', onClick: () => send('Alquilar') },
+        { label: 'Vender', onClick: () => send('Vender') },
+      ]);
+      return true;
+    }
+
+    if (booking.step === 'operation') {
+      booking.data.operation = text.slice(0, 40);
+      booking.step = 'district';
+      addMsg('bot', 'Genial. ¿En qué distrito te interesa la propiedad?');
+      return true;
+    }
+
+    if (booking.step === 'district') {
+      booking.data.district = text.slice(0, 80);
+      booking.step = 'submitting';
+      await createLeadAndOfferSlots();
+      return true;
+    }
+
+    return false;
+  }
+
   function showTyping() {
     const w = document.createElement('div');
     w.id = 'hb-typing'; w.className = 'hb-msg bot hb-typing';
@@ -179,6 +382,21 @@
     resize();
     sendBtn.disabled = true;
     loading = true;
+
+    if (!booking.active && isBookingIntent(t)) {
+      loading = false;
+      startBookingFlow();
+      inp.focus();
+      return;
+    }
+
+    if (booking.active) {
+      const consumed = await handleBookingStep(t);
+      loading = false;
+      inp.focus();
+      if (consumed) return;
+    }
+
     showTyping();
 
     try {

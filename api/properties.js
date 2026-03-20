@@ -7,7 +7,17 @@ const MAX_PROPS = parseInt(process.env.MAX_PROPERTIES || '20');
 let cache = { data: null, ts: 0 };
 const CACHE_TTL = 15 * 60 * 1000;
 
-async function fetchProperties() {
+function cacheMeta() {
+  return {
+    cached: Boolean(cache.data),
+    updatedAt: cache.ts ? new Date(cache.ts).toISOString() : null,
+    ttlMs: CACHE_TTL,
+    count: cache.data?.length || 0,
+  };
+}
+
+async function fetchProperties(options = {}) {
+  const { allowStaleOnError = true } = options;
   const now = Date.now();
   if (cache.data && now - cache.ts < CACHE_TTL) {
     return cache.data;
@@ -16,10 +26,18 @@ async function fetchProperties() {
   /* RealHomes expone el CPT "property" en el WP REST API */
   const url = `${WP_URL}/wp-json/wp/v2/propiedad?per_page=${MAX_PROPS}&status=publish&_embed=true`;
 
-  const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) throw new Error(`WP REST API error: ${res.status}`);
-
-  const posts = await res.json();
+  let posts;
+  try {
+    const res  = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) throw new Error(`WP REST API error: ${res.status}`);
+    posts = await res.json();
+  } catch (err) {
+    if (allowStaleOnError && cache.data) {
+      console.warn('[Habby] Usando cache stale de propiedades por error de WP:', err.message);
+      return cache.data;
+    }
+    throw err;
+  }
 
   const properties = posts.map(p => {
     const meta = p.meta || {};
@@ -110,7 +128,7 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   try {
     const props = await fetchProperties();
-    res.json({ count: props.length, properties: props });
+    res.json({ count: props.length, cache: cacheMeta(), properties: props });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }
@@ -118,3 +136,4 @@ module.exports = async (req, res) => {
 
 module.exports.fetchProperties     = fetchProperties;
 module.exports.propertiesToContext = propertiesToContext;
+module.exports.getPropertiesCacheMeta = cacheMeta;

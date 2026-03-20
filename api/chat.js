@@ -1,4 +1,5 @@
 const { fetchProperties, propertiesToContext } = require('./properties');
+const { generateChatReply, getLlmStatus } = require('./llm');
 
 const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
 
@@ -8,31 +9,25 @@ module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST')    return res.status(405).json({ error: 'Método no permitido.' });
-
-  if (!process.env.GROQ_API_KEY) {
-    return res.status(500).json({ error: 'GROQ_API_KEY no configurada en Vercel.' });
+  if (req.method === 'GET') {
+    return res.json({
+      ok: true,
+      endpoint: 'POST /api/chat',
+      llm: getLlmStatus(),
+    });
   }
+  if (req.method !== 'POST')    return res.status(405).json({ error: 'Método no permitido.' });
 
   const { messages } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Se requiere el campo messages.' });
   }
 
-  const history = messages
-    .slice(-20)
-    .map(m => ({
-      role:    m.role === 'assistant' ? 'assistant' : 'user',
-      content: String(m.content || '').slice(0, 1000).trim(),
-    }))
-    .filter(m => m.content);
-
-  if (!history.length) return res.status(400).json({ error: 'Mensaje vacío.' });
-
   let propertiesContext = 'No se pudieron cargar los inmuebles en este momento.';
+  let properties = [];
   try {
-    const props = await fetchProperties();
-    propertiesContext = propertiesToContext(props);
+    properties = await fetchProperties();
+    propertiesContext = propertiesToContext(properties);
   } catch (err) {
     console.warn('[Habby] WP REST API caído:', err.message);
   }
@@ -74,38 +69,18 @@ ${propertiesContext}
 - Cierra con una pregunta corta para seguir ayudando`;
 
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model:      'llama-3.3-70b-versatile',
-        max_tokens: 1024,
-        messages:   [
-          { role: 'system', content: systemPrompt },
-          ...history,
-        ],
-      }),
+    const result = await generateChatReply({
+      messages,
+      systemPrompt,
+      properties,
+      waUrl,
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      const rawError = data?.error?.message || 'Error de Groq.';
-      const lower = String(rawError).toLowerCase();
-      const isCreditIssue = /credit|saldo|insufficient|payment|required/.test(lower);
-      const userMessage = isCreditIssue
-        ? `El servicio de IA está temporalmente sin saldo. Puedes hablar con un asesor aquí: ${waUrl}`
-        : rawError;
-
-      console.error('[Habby] Groq error:', data);
-      return res.status(502).json({ error: userMessage });
-    }
-
-    const reply = data.choices?.[0]?.message?.content || '';
-    res.json({ reply });
+    res.json({
+      reply: result.reply,
+      provider: result.provider,
+      fallbackAttempts: result.attempts || [],
+    });
 
   } catch (err) {
     console.error('[Habby] Fetch error:', err);
