@@ -1,320 +1,240 @@
-# Habby Chatbot - Informe Final de Desarrollo
+# Habby Chatbot — Documentación Global del Proyecto
 
-## 0. Informe Final (Estado del Proyecto)
+Asistente inmobiliario para Habita Perú con arquitectura híbrida de IA, captura de leads y agendamiento de citas.
 
-Estado: backend operativo para chat inmobiliario, captura de leads y agendamiento de citas.
+> **Estado actual (fase de prueba):** interfaz tipo **widget**.  
+> **Visión final del producto:** experiencia conversacional **full-screen** (ventana completa), reemplazando la experiencia anterior de `https://habita.pe/habby/`.
 
-Componentes finalizados en esta fase:
-- Integracion con WordPress REST API para propiedades.
-- Motor IA hibrido (Qwen en Ollama como primario, fallback opcional).
-- Modo seguro para continuidad del servicio.
-- Persistencia de leads y citas con Supabase.
-- Confirmacion de cita para pantalla y envio por email (si SMTP esta configurado).
+---
 
-Pendiente de siguiente fase:
-- Frontend full-screen (sin icono flotante).
-- Slots automaticos de agenda y recordatorios programados.
-- Panel de gestion comercial (leads/citas).
+## 1) Resumen ejecutivo
 
-## 1. Resumen Ejecutivo
+Este proyecto implementa un chatbot inmobiliario que:
 
-Habby Chatbot es un asistente inmobiliario para Habita Peru que conecta clientes con propiedades publicadas en WordPress y responde consultas en lenguaje natural.
+- Consulta propiedades reales desde WordPress REST API.
+- Responde consultas con LLM híbrido (Ollama como principal, Groq opcional como fallback).
+- Registra leads en Supabase.
+- Agenda citas con validación de cruces horarias.
+- Envía confirmaciones por correo (si SMTP está configurado).
 
-La arquitectura elegida es hibrida y prioriza continuidad operativa:
-- Motor principal local con Ollama + Qwen.
-- Fallback opcional a Groq (apagado por defecto).
-- Modo seguro cuando no hay disponibilidad de IA.
-- Cache de propiedades para resistir caidas puntuales de WordPress.
+El backend está operativo y desplegable. La capa visual actual (widget) se usa para validación funcional y será reemplazada por frontend full-screen en la siguiente etapa.
 
-Objetivo principal: minimizar riesgo de caidas y dependencia de creditos por API externa, manteniendo experiencia estable para clientes.
+---
 
-## 2. Problema de Negocio
+## 2) Objetivo del proyecto
 
-Antes del enfoque actual, un chatbot dependiente de un solo proveedor de IA enfrentaba riesgos:
-- Interrupcion por agotamiento de creditos.
-- Fallos por latencia o indisponibilidad del proveedor.
-- Poca previsibilidad de costos por consumo.
-- Mala experiencia cuando WordPress o el proveedor de IA no responden.
+Construir un asistente comercial inmobiliario robusto, medible y escalable que convierta conversaciones en leads y citas agendadas, minimizando dependencia de un único proveedor de IA.
 
-## 3. Objetivos del Proyecto
+---
 
-- Ofrecer asistencia inmobiliaria 24/7.
-- Responder usando data real del portal inmobiliario.
-- Mantener alta disponibilidad en condiciones reales de VPS.
-- Controlar costos operativos mensuales.
-- Permitir crecimiento por fases sin reescribir el sistema.
+## 3) Alcance funcional actual
 
-## 4. Alcance Funcional Actual
+### Incluido en esta fase
 
-- Consulta de propiedades publicadas.
-- Respuestas guiadas sobre compra, venta y alquiler.
-- Derivacion a asesor humano por WhatsApp.
-- Endpoint de salud para monitoreo operativo.
-- Degradacion controlada (safe-mode) ante fallos.
+- Chat con contexto inmobiliario.
+- Integración con catálogo de inmuebles de WordPress.
+- Captura de leads.
+- Disponibilidad de horarios para agenda.
+- Creación de citas con control de conflictos.
+- Confirmación por email (opcional por configuración).
+- Endpoint de salud para monitoreo.
 
-## 5. Arquitectura Tecnica
+### No incluido todavía (fase siguiente)
 
-Componentes principales:
-- Frontend web (integracion actual por script).
-- Backend Node.js/Express.
-- Fuente de datos inmobiliaria desde WordPress REST API.
-- LLM principal local via Ollama (Qwen).
-- Cache en memoria de propiedades.
+- Frontend full-screen definitivo con diseño de marca.
+- Panel comercial integral (gestión avanzada de leads/citas).
+- Automatizaciones avanzadas (recordatorios y flujos CRM).
 
-Flujo de atencion:
-1. Usuario envia mensaje.
-2. Backend obtiene contexto de propiedades (cache o WP).
-3. Se intenta responder con Ollama (Qwen).
-4. Si esta activado, se intenta fallback a Groq.
-5. Si no hay proveedor disponible, responde safe-mode con alternativas y contacto asesor.
+---
 
-## 6. Justificacion de Tecnologias
+## 4) Arquitectura (alto nivel)
 
-### Node.js + Express
-- Rapido de implementar y mantener.
-- Buen rendimiento para APIs de chat.
-- Amplio soporte en VPS y hosting tradicional.
+### Capa de presentación
 
-### Ollama + Qwen (local)
-- Sin costo por token ni creditos por request.
-- Mayor control de disponibilidad.
-- Permite operar en infraestructura propia (DirectAdmin + VPS).
+- `public/habby.js`: widget actual de prueba.
+- `prueba.html`: panel simple para validar flujo de citas.
 
-### WordPress REST API
-- Reutiliza la fuente oficial ya existente del negocio.
-- Evita doble carga operativa de publicar en dos sistemas.
+### Capa API
 
-### Cache en memoria
-- Reduce latencia de respuesta.
-- Permite continuidad temporal cuando WordPress falla.
+- Node.js + Express (`index.js` + rutas en `api/`).
+- Endpoints desacoplados por dominio: chat, leads, citas, disponibilidad, propiedades.
 
-## 7. Beneficios Esperados
+### Capa de datos
 
-- Mayor disponibilidad del servicio de chat.
-- Menor riesgo financiero por consumo variable de API.
-- Mejor experiencia del usuario final.
-- Respuestas alineadas al inventario real.
-- Base solida para escalar a analitica, CRM y automatizaciones.
+- Supabase (PostgreSQL).
+- Esquema en `supabase/schema.sql`.
 
-## 8. Pros y Contras de la Solucion
+### Capa de IA
 
-### Pros
-- Menor dependencia de terceros para IA.
-- Costos mas predecibles.
-- Mejor resiliencia con fallback y safe-mode.
-- Arquitectura extensible por fases.
+- Primario: Ollama local (modelo Qwen).
+- Fallback opcional: Groq.
+- Safe-mode cuando no hay proveedor disponible.
 
-### Contras
-- Mayor responsabilidad operativa en el VPS.
-- Requiere monitoreo de recursos (CPU/RAM).
-- La calidad de respuesta depende del modelo y tuning local.
+---
 
-## 9. Riesgos y Mitigaciones
+## 5) Estructura del repositorio
 
-- Riesgo: saturacion del VPS.
-	Mitigacion: timeouts, circuit breaker, modelos ligeros y monitoreo.
+- `index.js`: bootstrap del servidor.
+- `api/chat.js`: flujo principal conversacional.
+- `api/properties.js`: consulta y normalización de propiedades desde WordPress.
+- `api/leads.js`: registro y validación de leads.
+- `api/availability.js`: cálculo de slots disponibles.
+- `api/appointments.js`: creación/listado de citas y validación de cruces.
+- `api/llm.js`: orquestación de proveedor IA principal/fallback/safe-mode.
+- `api/db.js`: conexión y utilidades de persistencia.
+- `api/mailer.js`: envío de confirmaciones SMTP.
+- `public/habby.js`: cliente de widget actual.
+- `supabase/schema.sql`: tablas y constraints de base de datos.
+- `vercel.json`: configuración de despliegue en Vercel.
 
-- Riesgo: caida de WordPress.
-	Mitigacion: cache stale y respuesta de contingencia.
+---
 
-- Riesgo: caida del motor IA.
-	Mitigacion: fallback opcional + safe-mode + contacto humano.
+## 6) Endpoints disponibles
 
-- Riesgo: crecimiento de trafico.
-	Mitigacion: separar servicios por capas y agregar cache distribuido.
+### Chat
 
-## 10. Escalabilidad
-
-Escalabilidad vertical (corto plazo):
-- Aumentar RAM/CPU del VPS.
-- Ajustar modelo y concurrencia de Ollama.
-
-Escalabilidad horizontal (mediano plazo):
-- Separar backend y Ollama en nodos distintos.
-- Agregar Redis para cache compartido.
-- Balanceador para multiples instancias de API.
-
-Escalabilidad funcional (largo plazo):
-- Guardar leads e historial en base de datos.
-- Integracion con CRM y automatizaciones comerciales.
-- Dashboard de conversion y calidad de atencion.
-
-## 11. Costos Operativos (Enfoque Actual)
-
-- Costo principal: VPS (plan fijo).
-- IA local: sin cobro por request/token.
-- Costo variable adicional: solo si se activa fallback externo o se amplian recursos del VPS.
-
-## 12. KPIs Recomendados
-
-- Disponibilidad de endpoint de chat (% uptime).
-- Latencia promedio y p95 de respuesta.
-- Tasa de fallback y safe-mode.
-- Tasa de derivacion a asesor.
-- Conversion a lead calificado.
-
-## 13. Estado Actual de Implementacion
-
-- Backend hibrido implementado.
-- Qwen en Ollama configurado como principal.
-- Fallback Groq opcional y desactivado por defecto.
-- Endpoint de salud y metadata de cache habilitados.
-- Captura de leads y agendamiento de citas con Supabase.
-- Confirmacion por email (si SMTP esta configurado).
-
-## 14. Proxima Fase Recomendada
-
-1. Despliegue productivo en VPS con servicios persistentes (Node + Ollama).
-2. Monitoreo y alertas de salud/latencia.
-3. Frontend full-screen de chat (sin icono flotante).
-4. Persistencia de leads en base de datos.
-
-## 15. Endpoints
-
-- `POST /api/chat`: respuesta de chat con proveedor hibrido.
-- `GET /api/chat`: estado LLM (proveedor principal, cooldown, fallback).
-- `GET /api/properties`: propiedades con metadata de cache.
-- `POST /api/leads`: registra lead (nombre, telefono, email, filtros).
-- `GET /api/leads`: estado de configuracion de endpoint.
-- `POST /api/appointments`: crea cita, valida cruces y envia confirmacion email.
-- `GET /api/appointments`: estado de configuracion de endpoint.
-- `GET /api/availability`: lista slots disponibles para agendar (sin cruces).
-- `GET /api/health`: estado operativo general (LLM + cache).
-- `GET /habby.js`: script cliente actual.
-
-## 16. Variables de Entorno
+- `POST /api/chat` → responde mensaje del usuario.
+- `GET /api/chat` → estado de proveedor IA.
 
 ### Datos inmobiliarios
 
-| Variable | Descripcion | Default |
-|---|---|---|
-| `WP_URL` | URL base de WordPress | `https://habita.pe` |
-| `MAX_PROPERTIES` | Maximo de propiedades por sync | `20` |
-| `WHATSAPP_NUMBER` | Numero de asesor sin `+` | `51999999999` |
+- `GET /api/properties` → propiedades y metadata de caché.
 
-### LLM
+### Leads
 
-| Variable | Descripcion | Default |
-|---|---|---|
-| `LLM_PRIMARY` | `ollama` o `groq` | `ollama` |
-| `OLLAMA_BASE_URL` | endpoint de Ollama | `http://127.0.0.1:11434` |
-| `OLLAMA_MODEL` | modelo principal local | `qwen2.5:7b-instruct` |
-| `OLLAMA_TIMEOUT_MS` | timeout Ollama | `8000` |
-| `OLLAMA_MAX_FAILS` | fallos para circuit breaker | `3` |
-| `OLLAMA_COOLDOWN_MS` | tiempo de cooldown | `60000` |
-| `LLM_ENABLE_GROQ_FALLBACK` | fallback externo opcional | `false` |
-| `GROQ_API_KEY` | API key Groq (opcional) | - |
-| `GROQ_MODEL` | modelo Groq | `llama-3.3-70b-versatile` |
-| `GROQ_TIMEOUT_MS` | timeout Groq | `10000` |
+- `POST /api/leads` → crea lead.
+- `GET /api/leads` → estado/configuración del módulo.
 
-### Supabase + Email
+### Agenda y citas
 
-| Variable | Descripcion | Default |
-|---|---|---|
-| `SUPABASE_URL` | URL del proyecto Supabase | - |
-| `SUPABASE_SERVICE_ROLE_KEY` | Key server-side (privada) | - |
-| `SMTP_HOST` | Servidor SMTP | - |
-| `SMTP_PORT` | Puerto SMTP | `587` |
-| `SMTP_USER` | Usuario SMTP | - |
-| `SMTP_PASS` | Password/Token SMTP | - |
-| `SMTP_FROM` | Remitente visible en correos | `Habita Peru <no-reply@habita.pe>` |
+- `GET /api/availability` → slots disponibles.
+- `POST /api/appointments` → agenda cita validando conflictos.
+- `GET /api/appointments` → estado/configuración.
+- `GET /api/appointments?view=list&limit=50` → listado para panel.
 
-### Agenda automatica
+### Operación
 
-| Variable | Descripcion | Default |
-|---|---|---|
-| `SLOTS_DAYS_AHEAD` | Dias hacia adelante para sugerir horarios | `7` |
-| `SLOT_MINUTES` | Duracion de cada slot | `30` |
-| `WORK_START_HOUR` | Hora inicial (formato 24h) | `9` |
-| `WORK_END_HOUR` | Hora final (formato 24h) | `18` |
-| `WORK_DAYS` | Dias habiles (0=dom, 1=lun ... 6=sab) | `1,2,3,4,5,6` |
-| `LOCAL_TZ_OFFSET_MINUTES` | Offset horario local respecto a UTC | `-300` |
+- `GET /api/health` → salud general del servicio.
+- `GET /habby.js` → script de cliente actual.
 
-## 17. Base de datos (Supabase)
+---
 
-1. Crea un proyecto en Supabase.
-2. En SQL Editor ejecuta el script: `supabase/schema.sql`.
-3. Copia `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY` a tus variables de entorno del backend.
+## 7) Variables de entorno
 
-Tablas creadas:
-- `leads`: datos de cliente y filtros de busqueda.
-- `appointments`: citas agendadas con validacion de rango horario.
-- `email_logs`: trazabilidad de envios de confirmacion.
+El proyecto ya incluye:
 
-### 17.1 Configuracion exacta en Supabase (paso a paso)
+- `.env` (local, no subir con secretos reales).
+- `.env.example` (plantilla de referencia).
 
-1. Crear proyecto:
-- Organizacion: la tuya (ejemplo: sankarea270).
-- Nombre del proyecto: `Habita`.
-- Region: la mas cercana a Peru.
-- Habilitar API de datos: activado.
-- Habilitar RLS automatico: activado.
+Variables clave:
 
-2. Obtener credenciales (en Supabase):
-- Ruta: Project Settings > API.
-- Copiar:
-	- `Project URL` -> variable `SUPABASE_URL`.
-	- `service_role` -> variable `SUPABASE_SERVICE_ROLE_KEY`.
+- WordPress: `WP_URL`, `MAX_PROPERTIES`, `WHATSAPP_NUMBER`.
+- LLM: `LLM_PRIMARY`, `OLLAMA_*`, `LLM_ENABLE_GROQ_FALLBACK`, `GROQ_*`.
+- Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`.
+- Agenda: `SLOTS_DAYS_AHEAD`, `SLOT_MINUTES`, `WORK_*`, `LOCAL_TZ_OFFSET_MINUTES`.
 
-3. Definir variables en el backend (VPS o Vercel):
-- `SUPABASE_URL=https://<tu-proyecto>.supabase.co`
-- `SUPABASE_SERVICE_ROLE_KEY=<tu-service-role-key>`
+> **Seguridad:** nunca expongas `SUPABASE_SERVICE_ROLE_KEY` ni credenciales SMTP en frontend.
 
-4. Seguridad obligatoria:
-- Nunca exponer `SUPABASE_SERVICE_ROLE_KEY` en frontend.
-- No poner claves en `public/habby.js`.
-- Mantener HTTPS en produccion.
-- Operar Supabase solo desde el backend.
+---
 
-5. Verificar conexion:
-- `GET /api/leads` debe mostrar `configured: true`.
-- `GET /api/appointments` debe mostrar `configured: true`.
+## 8) Instalación y ejecución local
 
-## 18. Flujo automatizado (lead + cita)
+### Requisitos
 
-1. Frontend envia datos a `POST /api/leads`.
-2. Backend guarda lead y responde mensaje para pantalla (`uiMessage`).
-3. Frontend consulta `GET /api/availability` para mostrar horarios libres.
-4. Frontend agenda con `POST /api/appointments`.
-5. Backend valida conflictos de horario antes de crear la cita.
-6. Si hay email y SMTP configurado, envia confirmacion y registra log.
-7. El endpoint responde con `uiMessage` para mostrar confirmacion inmediata en pantalla.
+- Node.js 18+
+- npm
+- (Opcional) Ollama local para operación híbrida real
 
-## 19. Verificacion Rapida
+### Pasos
 
-- `GET /api/health` debe responder `status: ok`.
-- `GET /api/properties` debe traer propiedades y metadata de cache.
-- `POST /api/chat` debe indicar `provider` (`ollama`, `groq`, `safe-mode`).
-- `POST /api/leads` debe crear y devolver `lead.id`.
-- `GET /api/availability` debe devolver `slots` disponibles.
-- `POST /api/appointments` debe crear cita y devolver `uiMessage`.
+1. Instalar dependencias: `npm install`
+2. Revisar y completar `.env`
+3. Levantar backend: `npm run dev`
+4. Verificar salud: `GET /api/health`
 
-## 20. Operacion temporal en Vercel y migracion final a VPS
+### Scripts disponibles
 
-### Temporal (pruebas ahora)
+- `npm run start`
+- `npm run dev`
+- `npm run smoke`
 
-Para pruebas estables en Vercel sin Ollama accesible:
+---
 
-- `LLM_PRIMARY=groq`
-- `LLM_ENABLE_GROQ_FALLBACK=false`
+## 9) Base de datos (Supabase)
 
-Con esto evitas `safe-mode` por falta de acceso a `127.0.0.1:11434` en serverless.
+1. Crear proyecto en Supabase.
+2. Ejecutar `supabase/schema.sql` en SQL Editor.
+3. Configurar en `.env`:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
 
-### Final (produccion VPS hibrida)
+Tablas principales esperadas:
 
-Cuando tengas acceso al VPS, usa perfil hibrido real:
+- `leads`
+- `appointments`
+- `email_logs`
 
-- `LLM_PRIMARY=ollama`
-- `OLLAMA_BASE_URL=http://127.0.0.1:11434`
-- `LLM_ENABLE_GROQ_FALLBACK=true`
+---
 
-Guia y plantillas listas en:
+## 10) Estrategia de despliegue por fases
 
-- `deploy/vps/MIGRACION_VPS.md`
-- `deploy/vps/ecosystem.config.cjs`
-- `deploy/vps/nginx-habby.conf`
+### Fase actual (temporal)
 
-### Smoke test reutilizable (Vercel o VPS)
+- Vercel para validación funcional rápida.
+- Recomendado en Vercel (si no hay Ollama local accesible):
+  - `LLM_PRIMARY=groq`
+  - `LLM_ENABLE_GROQ_FALLBACK=false`
 
-- `npm run smoke -- --base https://habby-chatbot.vercel.app`
-- `npm run smoke -- --base https://TU-DOMINIO-VPS`
+### Fase objetivo (final)
+
+- VPS con backend Node + Ollama local para operación híbrida completa.
+- Perfil esperado:
+  - `LLM_PRIMARY=ollama`
+  - `OLLAMA_BASE_URL=http://127.0.0.1:11434`
+  - `LLM_ENABLE_GROQ_FALLBACK=true`
+
+---
+
+## 11) Roadmap de producto (importante)
+
+### Situación actual
+
+- El bot se presenta como widget para pruebas de flujo y estabilidad.
+
+### Próximo hito
+
+- Reemplazar el widget por frontend **full-screen** alineado a marca.
+- Reutilizar el backend actual (chat, leads, citas y disponibilidad).
+- Mantener compatibilidad de API para no romper integraciones existentes.
+
+---
+
+## 12) Pruebas recomendadas de aceptación
+
+1. `POST /api/chat` responde con proveedor válido (`ollama`, `groq` o `safe-mode`).
+2. `POST /api/leads` crea lead con ID.
+3. `GET /api/availability` retorna slots.
+4. `POST /api/appointments` crea cita sin conflicto.
+5. `GET /api/appointments?view=list` lista citas para panel.
+6. `GET /api/health` reporta servicio operativo.
+
+---
+
+## 13) Documentos complementarios
+
+Para detalle de entrega y planificación:
+
+- `README_ENTREGA_FINAL.md` → informe técnico formal de cierre de fase.
+- `README_PLAN_DESARROLLO_2026.md` → cronograma diario completo (60 jornadas).
+
+---
+
+## 14) Estado global de madurez
+
+- **Backend API:** operativo.
+- **Integración de datos:** operativa (WordPress + Supabase).
+- **Flujo comercial (lead → cita):** operativo.
+- **UI final full-screen:** pendiente (siguiente fase).
+
+Con esta base, el proyecto está listo para evolucionar de prototipo funcional (widget) a producto final de ventana completa, sin rehacer la lógica central del sistema.
