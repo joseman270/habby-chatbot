@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/*.js", "use": "@vercel/node" },
+    { "src": "public/**", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/chat",       "dest": "/api/chat.js" },
+    { "src": "/api/properties", "dest": "/api/properties.js" },
+    { "src": "/api/leads",      "dest": "/api/leads.js" },
+    { "src": "/api/appointments", "dest": "/api/appointments.js" },
+    { "src": "/api/availability", "dest": "/api/availability.js" },
+    { "src": "/api/health",     "dest": "/api/health.js" },
+    { "src": "/habby.js",       "dest": "/api/widget.js" }
+  ]
+}
