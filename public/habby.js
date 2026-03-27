@@ -75,8 +75,8 @@
 .hb-hinfo strong{font-size:14px;font-weight:600}
 .hb-status{font-size:11px;opacity:.85;display:flex;align-items:center;gap:4px}
 .hb-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
-#hb-cls{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
-#hb-cls:hover{background:rgba(255,255,255,.15)}
+#hb-clr,#hb-cls{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
+#hb-clr:hover,#hb-cls:hover{background:rgba(255,255,255,.15)}
 #hb-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 #hb-msgs::-webkit-scrollbar{width:4px}
 #hb-msgs::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
@@ -121,6 +121,7 @@
   <div id="hb-head">
     <div id="hb-av">H</div>
     <div class="hb-hinfo"><strong>Habby</strong><span class="hb-status"><span class="hb-dot"></span>Activo ahora</span></div>
+    <button id="hb-clr" aria-label="Limpiar chat" title="Limpiar conversación"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 19 2 5 16 3 19 6 17 20 3"/><path d="M19 5l-8 8"/></svg></button>
     <button id="hb-cls" aria-label="Cerrar"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   </div>
   <div id="hb-msgs" role="log" aria-live="polite"></div>
@@ -135,6 +136,7 @@
   /* ── Referencias DOM ── */
   const btn      = document.getElementById('hb-btn');
   const box      = document.getElementById('hb-box');
+  const clrBtn   = document.getElementById('hb-clr');
   const clsBtn   = document.getElementById('hb-cls');
   const msgs     = document.getElementById('hb-msgs');
   const inp      = document.getElementById('hb-inp');
@@ -411,6 +413,20 @@
     icoCls.style.display  = 'none';
   }
 
+  function clearChat() {
+    history = [];
+    profile = null;
+    msgs.innerHTML = '';
+    inp.disabled = true;
+    inp.value = '';
+    resize();
+    addChoices(`${WELCOME}\n\nSelecciona tu perfil para comenzar:`, [
+      { label: 'Comprador', onClick: () => setProfile('comprador') },
+      { label: 'Vendedor', onClick: () => setProfile('vendedor') },
+      { label: 'Agente de venta', onClick: () => setProfile('agente') },
+    ]);
+  }
+
   /* ── Enviar mensaje ── */
   async function send(text) {
     const t = (text || inp.value).trim();
@@ -482,6 +498,7 @@
 
   /* ── Eventos ── */
   btn.addEventListener('click',  () => open ? closeChat() : openChat());
+  clrBtn.addEventListener('click', clearChat);
   clsBtn.addEventListener('click', closeChat);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && open) closeChat(); });
   inp.addEventListener('input', resize);
