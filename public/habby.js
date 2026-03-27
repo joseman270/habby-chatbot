@@ -14,18 +14,45 @@
   const APPT_URL     = `${API_BASE}/appointments`;
   const PRIMARY      = '#1B4FD8';
   const PRIMARY_DK   = '#1540B8';
-  const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.\n\n¿En qué te puedo ayudar hoy?';
-  const QUICK        = [
-    '¿Qué propiedades tienen?',
-    'Busco depa para comprar',
-    'Quiero alquilar un inmueble',
-    'Quiero agendar una cita',
-  ];
+  const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.';
+  const PROFILE_COPY = {
+    comprador: {
+      label: 'Comprador',
+      intro: 'Perfecto. Te ayudaré a encontrar el inmueble ideal con datos reales de nuestro catálogo. ¿Qué estás buscando?',
+      quick: [
+        'Busco depa para comprar',
+        'Quiero alquilar un inmueble',
+        '¿Qué propiedades tienen en mi zona?',
+        'Quiero agendar una cita',
+      ],
+    },
+    vendedor: {
+      label: 'Vendedor',
+      intro: 'Excelente. Te cuento cómo Habita puede ayudarte a vender mejor y más rápido con apoyo comercial y marketing profesional. ¿Qué tipo de inmueble deseas vender?',
+      quick: [
+        'Quiero vender mi departamento',
+        '¿Qué beneficios tengo con Habita?',
+        '¿Cómo promocionan mi inmueble?',
+        'Quiero una llamada de asesor',
+      ],
+    },
+    agente: {
+      label: 'Agente de venta',
+      intro: 'Genial. Si tienes un contacto para vender, podemos colaborar con comisiones competitivas y soporte integral de marketing, contenido audiovisual y citas. ¿Te explico cómo trabajamos?',
+      quick: [
+        'Tengo un inmueble para captar',
+        'Quiero trabajar con baja comisión',
+        '¿Qué apoyo de marketing ofrecen?',
+        'Quiero coordinar una reunión',
+      ],
+    },
+  };
 
   /* ── Estado ── */
   let open    = false;
   let loading = false;
   let history = [];
+  let profile = null;
   let booking = {
     active: false,
     step: null,
@@ -139,7 +166,8 @@
     if (withQR && role === 'bot') {
       const qrs = document.createElement('div');
       qrs.className = 'hb-qrs';
-      QUICK.forEach(label => {
+      const quick = profile ? (PROFILE_COPY[profile]?.quick || []) : [];
+      quick.forEach(label => {
         const q = document.createElement('button');
         q.className = 'hb-qr';
         q.textContent = label;
@@ -192,6 +220,17 @@
     booking.data = {};
     booking.leadId = null;
     addMsg('bot', 'Perfecto. Te ayudo a agendar una cita. Primero, ¿cuál es tu nombre completo?');
+  }
+
+  function setProfile(selectedProfile) {
+    if (!PROFILE_COPY[selectedProfile]) return;
+
+    profile = selectedProfile;
+    addMsg('usr', `Soy ${PROFILE_COPY[selectedProfile].label}.`);
+    addMsg('bot', PROFILE_COPY[selectedProfile].intro, true);
+    inp.disabled = false;
+    inp.focus();
+    resize();
   }
 
   async function createLeadAndOfferSlots() {
@@ -376,6 +415,16 @@
   async function send(text) {
     const t = (text || inp.value).trim();
     if (!t || loading) return;
+
+    if (!profile) {
+      addChoices('Para ayudarte mejor, primero elige tu perfil:', [
+        { label: 'Comprador', onClick: () => setProfile('comprador') },
+        { label: 'Vendedor', onClick: () => setProfile('vendedor') },
+        { label: 'Agente de venta', onClick: () => setProfile('agente') },
+      ]);
+      return;
+    }
+
     addMsg('usr', t);
     history.push({ role: 'user', content: t });
     inp.value = '';
@@ -403,7 +452,7 @@
       const r = await fetch(API_URL, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ messages: history }),
+        body:    JSON.stringify({ messages: history, profile }),
       });
       const d = await r.json();
       hideTyping();
@@ -441,7 +490,12 @@
   sendBtn.addEventListener('click', () => { if (!sendBtn.disabled) send(); });
 
   /* ── Inicio ── */
-  addMsg('bot', WELCOME, true);
+  inp.disabled = true;
+  addChoices(`${WELCOME}\n\nSelecciona tu perfil para comenzar:`, [
+    { label: 'Comprador', onClick: () => setProfile('comprador') },
+    { label: 'Vendedor', onClick: () => setProfile('vendedor') },
+    { label: 'Agente de venta', onClick: () => setProfile('agente') },
+  ]);
   setTimeout(() => { if (!open) badge.style.display = 'flex'; }, 4000);
 
 })();
