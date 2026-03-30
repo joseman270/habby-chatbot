@@ -75,8 +75,13 @@
 .hb-hinfo strong{font-size:14px;font-weight:600}
 .hb-status{font-size:11px;opacity:.85;display:flex;align-items:center;gap:4px}
 .hb-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
+<<<<<<< HEAD
 #hb-clr,#hb-cls{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
 #hb-clr:hover,#hb-cls:hover{background:rgba(255,255,255,.15)}
+=======
+#hb-cls{background:none;border:none;color:rgba(235, 232, 232, 0.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
+#hb-cls:hover{background:rgba(255,255,255,.15)}
+>>>>>>> 14c6066 (cambios)
 #hb-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 #hb-msgs::-webkit-scrollbar{width:4px}
 #hb-msgs::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
@@ -119,7 +124,9 @@
 </button>
 <div id="hb-box" role="dialog" aria-label="Chat con Habby" aria-hidden="true">
   <div id="hb-head">
-    <div id="hb-av">H</div>
+  <div id="hb-av">
+   <img src="C:\Users\User\Desktop\habby-chatbot\Iso-Habita-Peru.png" alt="Mi imagen" width="200">
+</div>
     <div class="hb-hinfo"><strong>Habby</strong><span class="hb-status"><span class="hb-dot"></span>Activo ahora</span></div>
     <button id="hb-clr" aria-label="Limpiar chat" title="Limpiar conversación"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
     <button id="hb-cls" aria-label="Cerrar"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
