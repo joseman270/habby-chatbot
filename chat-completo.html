@@ -50,10 +50,10 @@
             right: auto !important;
             bottom: auto !important;
             
-            width: 100% !important;
-            height: 100% !important;
-            max-width: 600px !important;
-            max-height: 90vh !important;
+            width: min(92vw, 980px) !important;
+            height: min(88dvh, 760px) !important;
+            max-width: none !important;
+            max-height: none !important;
             
             background: #ffffff !important;
             border-radius: 24px !important;
@@ -234,12 +234,21 @@
                 max-width: 100vw !important;
                 max-height: 100dvh !important;
                 height: 100dvh !important;
+                width: 100vw !important;
                 border-radius: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
             }
             body {
                 background: #ffffff;
+            }
+        }
+
+        @media (min-width: 651px) and (max-width: 1024px) {
+            #hb-box {
+                width: min(94vw, 860px) !important;
+                height: min(90dvh, 720px) !important;
+                border-radius: 20px !important;
             }
         }
     </style>
