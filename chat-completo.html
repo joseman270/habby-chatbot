@@ -31,7 +31,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            overflow: hidden;
+            overflow: auto;
         }
 
         /* Ocultar el botón flotante iniciador de la versión widget */
@@ -111,6 +111,8 @@
             padding: 24px 20px !important;
             background: var(--bg-light) !important;
             scroll-behavior: smooth !important;
+            overflow-y: auto !important;
+            max-height: calc(100% - 160px) !important;
         }
 
         /* Estilizando la barra de scroll para un look más "App" */
