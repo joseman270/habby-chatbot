@@ -12,6 +12,10 @@
   const LEADS_URL    = `${API_BASE}/leads`;
   const AVAIL_URL    = `${API_BASE}/availability`;
   const APPT_URL     = `${API_BASE}/appointments`;
+  const BOOKING_DAYS = 3;
+  const BOOKING_MIN_DAYS = 1;
+  const BOOKING_SLOT_MINUTES = 30;
+  const BOOKING_MAX_SLOTS = 12;
   const PRIMARY      = '#1B4FD8';
   const PRIMARY_DK   = '#1540B8';
   const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.';
@@ -75,13 +79,8 @@
 .hb-hinfo strong{font-size:14px;font-weight:600}
 .hb-status{font-size:11px;opacity:.85;display:flex;align-items:center;gap:4px}
 .hb-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
-<<<<<<< HEAD
 #hb-clr,#hb-cls{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
 #hb-clr:hover,#hb-cls:hover{background:rgba(255,255,255,.15)}
-=======
-#hb-cls{background:none;border:none;color:rgba(235, 232, 232, 0.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
-#hb-cls:hover{background:rgba(255,255,255,.15)}
->>>>>>> 14c6066 (cambios)
 #hb-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 #hb-msgs::-webkit-scrollbar{width:4px}
 #hb-msgs::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
@@ -125,7 +124,7 @@
 <div id="hb-box" role="dialog" aria-label="Chat con Habby" aria-hidden="true">
   <div id="hb-head">
   <div id="hb-av">
-   <img src="C:\Users\User\Desktop\habby-chatbot\Iso-Habita-Peru.png" alt="Mi imagen" width="200">
+  
 </div>
     <div class="hb-hinfo"><strong>Habby</strong><span class="hb-status"><span class="hb-dot"></span>Activo ahora</span></div>
     <button id="hb-clr" aria-label="Limpiar chat" title="Limpiar conversación"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>
@@ -263,17 +262,26 @@
 
       booking.leadId = leadData.lead.id;
 
-      const availRes = await fetch(`${AVAIL_URL}?days=7&slot_minutes=30`);
+      const params = new URLSearchParams({
+        days: String(BOOKING_DAYS),
+        min_days: String(BOOKING_MIN_DAYS),
+        slot_minutes: String(BOOKING_SLOT_MINUTES),
+        limit: String(BOOKING_MAX_SLOTS),
+      });
+      const availRes = await fetch(`${AVAIL_URL}?${params.toString()}`);
       const availData = await availRes.json();
       if (!availRes.ok) {
         throw new Error(availData?.error || 'No se pudo consultar disponibilidad.');
       }
 
-      const slots = (availData.slots || []).slice(0, 6);
+      const slots = (availData.slots || [])
+        .slice()
+        .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())
+        .slice(0, 6);
       hideTyping();
 
       if (!slots.length) {
-        addMsg('bot', 'Por ahora no tengo horarios libres en los próximos días. ¿Deseas que te escriba cuando se libere uno?');
+        addMsg('bot', 'Por ahora no tengo horarios libres para los proximos 3 dias desde manana. ¿Deseas que un asesor te contacte con una alternativa?');
         resetBooking();
         return;
       }
