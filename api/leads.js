@@ -1,13 +1,18 @@
 const { getSupabase, isSupabaseConfigured } = require('./db');
+const { applyCors } = require('./http');
+const { createRateLimiter } = require('./rate-limit');
+
+const checkLeadsRateLimit = createRateLimiter({ windowMs: 60_000, max: 25 });
 
 function normalizeText(value, max = 180) {
   return String(value || '').trim().slice(0, max);
 }
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const corsAllowed = applyCors(req, res, 'GET, POST, OPTIONS');
+  if (!corsAllowed) {
+    return res.status(403).json({ error: 'Origen no permitido por CORS.' });
+  }
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
@@ -21,6 +26,13 @@ module.exports = async (req, res) => {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metodo no permitido.' });
+  }
+
+  const rate = checkLeadsRateLimit(req);
+  res.setHeader('X-RateLimit-Remaining', String(rate.remaining));
+  res.setHeader('X-RateLimit-Reset', String(rate.resetAt));
+  if (!rate.allowed) {
+    return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta nuevamente en un momento.' });
   }
 
   if (!isSupabaseConfigured()) {

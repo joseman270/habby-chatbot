@@ -1,5 +1,11 @@
 const { getSupabase, isSupabaseConfigured } = require('./db');
 const { isMailConfigured, sendAppointmentConfirmation } = require('./mailer');
+const { applyCors } = require('./http');
+const { createRateLimiter } = require('./rate-limit');
+
+const checkAppointmentsReadRateLimit = createRateLimiter({ windowMs: 60_000, max: 120 });
+const checkAppointmentsWriteRateLimit = createRateLimiter({ windowMs: 60_000, max: 30 });
+const APPOINTMENT_MIN_LEAD_HOURS = Number.parseInt(process.env.APPOINTMENT_MIN_LEAD_HOURS || '12', 10);
 
 function normalizeText(value, max = 180) {
   return String(value || '').trim().slice(0, max);
@@ -15,11 +21,31 @@ async function logEmailEvent(supabase, payload) {
 }
 
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const corsAllowed = applyCors(req, res, 'GET, POST, DELETE, OPTIONS');
+  if (!corsAllowed) {
+    return res.status(403).json({ error: 'Origen no permitido por CORS.' });
+  }
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  const readRate = checkAppointmentsReadRateLimit(req);
+  const writeRate = checkAppointmentsWriteRateLimit(req);
+
+  if (req.method === 'GET') {
+    res.setHeader('X-RateLimit-Remaining', String(readRate.remaining));
+    res.setHeader('X-RateLimit-Reset', String(readRate.resetAt));
+    if (!readRate.allowed) {
+      return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta nuevamente en un momento.' });
+    }
+  }
+
+  if (req.method === 'POST' || req.method === 'DELETE') {
+    res.setHeader('X-RateLimit-Remaining', String(writeRate.remaining));
+    res.setHeader('X-RateLimit-Reset', String(writeRate.resetAt));
+    if (!writeRate.allowed) {
+      return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta nuevamente en un momento.' });
+    }
+  }
 
   if (req.method === 'GET') {
     const wantsList = String(req.query?.view || '').toLowerCase() === 'list';
@@ -81,11 +107,51 @@ module.exports = async (req, res) => {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Metodo no permitido.' });
+    if (req.method !== 'DELETE') {
+      return res.status(405).json({ error: 'Metodo no permitido.' });
+    }
   }
 
   if (!isSupabaseConfigured()) {
     return res.status(500).json({ error: 'Supabase no configurado en el servidor.' });
+  }
+
+  if (req.method === 'DELETE') {
+    const idFromQuery = req.query?.id;
+    const idFromBody = req.body?.id;
+    const appointmentId = Number.parseInt(String(idFromQuery || idFromBody || ''), 10);
+
+    if (!Number.isFinite(appointmentId) || appointmentId <= 0) {
+      return res.status(400).json({ error: 'Debes enviar un id de cita valido.' });
+    }
+
+    try {
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from('appointments')
+        .delete()
+        .eq('id', appointmentId)
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        console.error('[Habby] appointments delete error:', error);
+        return res.status(502).json({ error: 'No se pudo borrar la cita.' });
+      }
+
+      if (!data) {
+        return res.status(404).json({ error: 'Cita no encontrada.' });
+      }
+
+      return res.json({
+        ok: true,
+        deletedId: data.id,
+        uiMessage: `La cita #${data.id} fue eliminada correctamente.`,
+      });
+    } catch (err) {
+      console.error('[Habby] appointments delete endpoint error:', err);
+      return res.status(500).json({ error: 'Error interno borrando cita.' });
+    }
   }
 
   const {
@@ -115,6 +181,15 @@ module.exports = async (req, res) => {
   }
   if (endsAtDate <= startsAtDate) {
     return res.status(400).json({ error: 'ends_at debe ser mayor que starts_at.' });
+  }
+
+  if (Number.isFinite(APPOINTMENT_MIN_LEAD_HOURS) && APPOINTMENT_MIN_LEAD_HOURS > 0) {
+    const minStart = new Date(Date.now() + APPOINTMENT_MIN_LEAD_HOURS * 60 * 60 * 1000);
+    if (startsAtDate < minStart) {
+      return res.status(400).json({
+        error: `La cita debe programarse con al menos ${APPOINTMENT_MIN_LEAD_HOURS} horas de anticipacion.`,
+      });
+    }
   }
 
   try {

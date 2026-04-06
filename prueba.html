@@ -148,6 +148,21 @@
             margin-bottom: 2px;
         }
 
+        .card-actions {
+            margin-top: 12px;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+
         .empty {
             text-align: center;
             color: var(--muted);
@@ -206,6 +221,7 @@
         const state = {
             autoTimer: null,
             lastCount: 0,
+            lastBase: '',
         };
 
         function showStatus(message, type = 'info') {
@@ -273,14 +289,47 @@
                         </div>
                     </div>
                     ${appt.notes ? `<div style="margin-top:10px;"><small style="color:#6b7280;display:block;">Notas</small><div>${appt.notes}</div></div>` : ''}
+                    <div class="card-actions">
+                        <button class="btn-danger" data-delete-id="${appt.id}">Borrar cita</button>
+                    </div>
                 </article>
             `;
+        }
+
+        async function deleteAppointment(id) {
+            const base = state.lastBase || $('apiBase').value.trim().replace(/\/$/, '');
+            if (!base) {
+                showStatus('Define una URL base valida.', 'error');
+                return;
+            }
+
+            const accepted = window.confirm(`Se borrara la cita #${id}. Esta accion no se puede deshacer.\n\n¿Deseas continuar?`);
+            if (!accepted) return;
+
+            showStatus(`Borrando cita #${id}...`);
+
+            try {
+                const response = await fetch(`${base}/api/appointments?id=${encodeURIComponent(String(id))}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data?.error || 'No se pudo borrar la cita.');
+                }
+
+                showStatus(data.uiMessage || `Cita #${id} borrada correctamente.`);
+                await loadAppointments();
+            } catch (error) {
+                showStatus(error.message || 'No se pudo borrar la cita.', 'error');
+            }
         }
 
         async function loadAppointments() {
             const base = $('apiBase').value.trim().replace(/\/$/, '');
             const status = $('status').value;
             const limit = Math.min(Math.max(parseInt($('limit').value || '50', 10), 1), 200);
+            state.lastBase = base;
 
             if (!base) {
                 showStatus('Define una URL base válida.', 'error');
@@ -320,6 +369,18 @@
         }
 
         $('btnLoad').addEventListener('click', loadAppointments);
+
+        $('cards').addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            const id = target.getAttribute('data-delete-id');
+            if (!id) return;
+
+            const appointmentId = parseInt(id, 10);
+            if (!Number.isFinite(appointmentId)) return;
+
+            deleteAppointment(appointmentId);
+        });
 
         $('btnAuto').addEventListener('click', () => {
             const btn = $('btnAuto');

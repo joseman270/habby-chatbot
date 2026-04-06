@@ -1,7 +1,10 @@
 const { fetchProperties, propertiesToContext } = require('./properties');
 const { generateChatReply, getLlmStatus } = require('./llm');
+const { applyCors } = require('./http');
+const { createRateLimiter } = require('./rate-limit');
 
 const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
+const checkChatRateLimit = createRateLimiter({ windowMs: 60_000, max: 45 });
 
 function normalizeProfile(profile) {
   const raw = String(profile || '').trim().toLowerCase();
@@ -62,10 +65,63 @@ Al recomendar propiedades:
 - Si no hay match exacto, sugiere alternativas cercanas y explica por qué`;
 }
 
+function getLastUserMessage(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i] || {};
+    const role = String(item.role || '').toLowerCase();
+    if (role === 'user') {
+      return String(item.content || '').trim();
+    }
+  }
+  return '';
+}
+
+function buildRuleBasedReply({ text, profile, waUrl }) {
+  const t = String(text || '').toLowerCase();
+
+  if (!t) return null;
+
+  if (/(hola|buenas|buenos dias|buenas tardes|buenas noches)\b/.test(t)) {
+    return 'Hola, soy Habby de Habita Peru. Te ayudo con compra, alquiler o venta de inmuebles. Dime en que distrito buscas y tu rango de presupuesto.';
+  }
+
+  if (/(asesor|humano|telefono|whatsapp|llamar|contactar)/.test(t)) {
+    return [
+      'Perfecto, te conecto con un asesor humano de Habita.',
+      `WhatsApp directo: ${waUrl}`,
+      '',
+      'Si deseas, tambien puedo adelantar tu perfil (operacion, distrito y presupuesto) para que te atiendan mas rapido.',
+    ].join('\n');
+  }
+
+  if (/(agendar|agenda|cita|visita|reunion|horario|disponibilidad)/.test(t)) {
+    return [
+      'Claro, te ayudo con la cita. Para asegurar disponibilidad en tiempo real necesitamos estos datos:',
+      '1. Nombre completo',
+      '2. Celular',
+      '3. Correo (opcional)',
+      '4. Operacion: comprar, alquilar o vender',
+      '5. Distrito de interes',
+      '',
+      `Si prefieres atencion inmediata por asesor: ${waUrl}`,
+    ].join('\n');
+  }
+
+  if (/(chiste|futbol|politica|receta|musica|tarea|programacion|codigo)/.test(t)) {
+    const profileHint = profile === 'vendedor'
+      ? 'si quieres vender, te explico como Habita acelera la comercializacion de tu inmueble.'
+      : 'si buscas comprar o alquilar, te ayudo a filtrar por zona, presupuesto y tipo de propiedad.';
+    return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
+  }
+
+  return null;
+}
+
 module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  const corsAllowed = applyCors(req, res, 'GET, POST, OPTIONS');
+  if (!corsAllowed) {
+    return res.status(403).json({ error: 'Origen no permitido por CORS.' });
+  }
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method === 'GET') {
@@ -76,6 +132,13 @@ module.exports = async (req, res) => {
     });
   }
   if (req.method !== 'POST')    return res.status(405).json({ error: 'Método no permitido.' });
+
+  const rate = checkChatRateLimit(req);
+  res.setHeader('X-RateLimit-Remaining', String(rate.remaining));
+  res.setHeader('X-RateLimit-Reset', String(rate.resetAt));
+  if (!rate.allowed) {
+    return res.status(429).json({ error: 'Demasiadas solicitudes. Intenta nuevamente en un momento.' });
+  }
 
   const { messages, profile } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -93,6 +156,21 @@ module.exports = async (req, res) => {
 
   const waUrl = `https://wa.me/${WHATSAPP}`;
   const normalizedProfile = normalizeProfile(profile);
+  const lastUserMessage = getLastUserMessage(messages);
+  const ruleReply = buildRuleBasedReply({
+    text: lastUserMessage,
+    profile: normalizedProfile,
+    waUrl,
+  });
+
+  if (ruleReply) {
+    return res.json({
+      reply: ruleReply,
+      provider: 'rule-based',
+      bypassedLlm: true,
+    });
+  }
+
   const profilePrompt = getProfilePrompt(normalizedProfile);
   const systemPrompt = `Eres Habby, el asistente virtual de Habita Perú, una agencia inmobiliaria especializada en la compra, venta y alquiler de inmuebles en Perú.
 
@@ -114,6 +192,8 @@ ${profilePrompt}
 - Respuestas concisas pero completas
 - Cuando recomiendas una propiedad, incluye siempre el link URL
 - Si no hay propiedades que coincidan exactamente, sugiere las más cercanas
+- No exceder 140 palabras salvo que pidan mas detalle
+- Cerrar siempre con una pregunta accionable de negocio
 
 ## REGLAS IMPORTANTES
 1. SOLO hablas de inmuebles y temas relacionados
@@ -132,7 +212,8 @@ ${propertiesContext}
 ## FORMATO
 - Listas cortas para múltiples propiedades
 - Por propiedad: nombre, precio, ubicación, características y URL
-- Cierra con una pregunta corta para seguir ayudando`;
+- Cierra con una pregunta corta para seguir ayudando
+- Si no hay datos suficientes, primero pide maximo 2 datos concretos antes de responder`;
 
   try {
     const result = await generateChatReply({
