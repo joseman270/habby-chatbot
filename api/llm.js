@@ -1,10 +1,12 @@
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
+const DEFAULT_OLLAMA_FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || '';
 const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const OLLAMA_TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS || '8000', 10);
 const GROQ_TIMEOUT_MS = parseInt(process.env.GROQ_TIMEOUT_MS || '10000', 10);
 const OLLAMA_MAX_FAILS = parseInt(process.env.OLLAMA_MAX_FAILS || '3', 10);
 const OLLAMA_COOLDOWN_MS = parseInt(process.env.OLLAMA_COOLDOWN_MS || '60000', 10);
+const OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK = String(process.env.OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK || 'false').toLowerCase() === 'true';
 
 let ollamaFailures = 0;
 let ollamaDisabledUntil = 0;
@@ -47,7 +49,13 @@ function isOllamaOpen() {
   return false;
 }
 
-async function callOllama({ systemPrompt, history }) {
+function canUseLocalModelFallback() {
+  if (!OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK) return false;
+  if (!DEFAULT_OLLAMA_FALLBACK_MODEL) return false;
+  return DEFAULT_OLLAMA_FALLBACK_MODEL !== DEFAULT_OLLAMA_MODEL;
+}
+
+async function callOllamaWithModel({ systemPrompt, history, model, providerLabel = 'ollama' }) {
   if (!isOllamaOpen()) {
     throw new Error('Ollama temporalmente en cooldown por fallos recientes.');
   }
@@ -59,7 +67,7 @@ async function callOllama({ systemPrompt, history }) {
       headers: { 'Content-Type': 'application/json' },
       signal: timeout.signal,
       body: JSON.stringify({
-        model: DEFAULT_OLLAMA_MODEL,
+        model,
         stream: false,
         messages: [{ role: 'system', content: systemPrompt }, ...history],
       }),
@@ -75,12 +83,46 @@ async function callOllama({ systemPrompt, history }) {
     if (!reply) throw new Error('Ollama devolvio una respuesta vacia.');
 
     markOllamaSuccess();
-    return { provider: 'ollama', reply };
+    return { provider: providerLabel, reply, model };
   } catch (err) {
     markOllamaFailure();
     throw err;
   } finally {
     timeout.clear();
+  }
+}
+
+async function callOllamaSmart({ systemPrompt, history }) {
+  try {
+    return await callOllamaWithModel({
+      systemPrompt,
+      history,
+      model: DEFAULT_OLLAMA_MODEL,
+      providerLabel: 'ollama',
+    });
+  } catch (primaryErr) {
+    if (!canUseLocalModelFallback()) {
+      throw primaryErr;
+    }
+
+    console.warn(
+      `[Habby] ollama primario fallo, intentando fallback local (${DEFAULT_OLLAMA_FALLBACK_MODEL}):`,
+      primaryErr.message,
+    );
+
+    try {
+      return await callOllamaWithModel({
+        systemPrompt,
+        history,
+        model: DEFAULT_OLLAMA_FALLBACK_MODEL,
+        providerLabel: 'ollama-fallback-model',
+      });
+    } catch (fallbackErr) {
+      throw new Error(
+        `Ollama primario (${DEFAULT_OLLAMA_MODEL}) fallo: ${primaryErr.message}. `
+        + `Fallback local (${DEFAULT_OLLAMA_FALLBACK_MODEL}) fallo: ${fallbackErr.message}`,
+      );
+    }
   }
 }
 
@@ -158,7 +200,7 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
 
     try {
       if (provider === 'ollama') {
-        return await callOllama({ systemPrompt, history });
+        return await callOllamaSmart({ systemPrompt, history });
       }
       return await callGroq({ systemPrompt, history, apiKey: groqKey });
     } catch (err) {
@@ -180,6 +222,8 @@ function getLlmStatus() {
     ollama: {
       baseUrl: DEFAULT_OLLAMA_URL,
       model: DEFAULT_OLLAMA_MODEL,
+      fallbackModel: DEFAULT_OLLAMA_FALLBACK_MODEL || null,
+      localModelFallbackEnabled: canUseLocalModelFallback(),
       timeoutMs: OLLAMA_TIMEOUT_MS,
       consecutiveFailures: ollamaFailures,
       open: isOllamaOpen(),

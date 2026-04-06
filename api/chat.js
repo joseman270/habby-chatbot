@@ -4,6 +4,7 @@ const { applyCors } = require('./http');
 const { createRateLimiter } = require('./rate-limit');
 
 const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
+const RULES_ONLY_MODE = String(process.env.CHAT_RULES_ONLY_MODE || 'false').toLowerCase() === 'true';
 const checkChatRateLimit = createRateLimiter({ windowMs: 60_000, max: 45 });
 
 function normalizeProfile(profile) {
@@ -76,7 +77,110 @@ function getLastUserMessage(messages) {
   return '';
 }
 
-function buildRuleBasedReply({ text, profile, waUrl }) {
+function normalizeForSearch(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function detectOperation(text) {
+  const t = normalizeForSearch(text);
+  if (/(alquilar|alquiler|renta|arrendar)/.test(t)) return 'alquiler';
+  if (/(comprar|compra|venta|vender|vendo)/.test(t)) return 'venta';
+  return null;
+}
+
+function scorePropertyMatch(property, queryText) {
+  const query = normalizeForSearch(queryText);
+  const status = normalizeForSearch(property.status);
+  const title = normalizeForSearch(property.title);
+  const type = normalizeForSearch(property.type);
+  const city = normalizeForSearch(property.city);
+  const address = normalizeForSearch(property.address);
+  const features = normalizeForSearch(property.features);
+  const operation = detectOperation(query);
+
+  let score = 0;
+
+  if (operation) {
+    if (operation === 'alquiler' && /(alquiler|alquilar|renta)/.test(status)) score += 4;
+    if (operation === 'venta' && /(venta|vender|compra)/.test(status)) score += 4;
+  }
+
+  const words = query.split(/\s+/).filter((w) => w.length >= 3);
+  words.forEach((word) => {
+    if (city.includes(word)) score += 3;
+    if (address.includes(word)) score += 2;
+    if (title.includes(word) || type.includes(word)) score += 2;
+    if (features.includes(word)) score += 1;
+  });
+
+  return score;
+}
+
+function isPropertySearchIntent(text) {
+  const t = normalizeForSearch(text);
+  return /(propiedad|propiedades|depa|departamento|casa|inmueble|comprar|alquilar|alquiler|venta|vender|distrito|zona|precio|cuarto|dormitorio)/.test(t);
+}
+
+function buildPropertyRuleReply({ text, properties, waUrl }) {
+  if (!isPropertySearchIntent(text)) return null;
+
+  const ranked = (properties || [])
+    .map((property) => ({ property, score: scorePropertyMatch(property, text) }))
+    .sort((a, b) => b.score - a.score);
+
+  const withScore = ranked.filter((row) => row.score > 0);
+  const selected = (withScore.length ? withScore : ranked).slice(0, 3).map((row) => row.property);
+
+  if (!selected.length) {
+    return [
+      'No encontre propiedades en este momento con ese criterio exacto.',
+      `Si deseas apoyo inmediato, te conecto con un asesor: ${waUrl}`,
+      'Dime si buscas compra o alquiler, distrito y presupuesto aproximado.',
+    ].join('\n');
+  }
+
+  const lines = selected.map((p, idx) => {
+    const place = [p.city, p.address].filter(Boolean).join(' - ') || 'Ubicacion por confirmar';
+    return `${idx + 1}. ${p.title}\n${p.price} | ${place}\n${p.url}`;
+  });
+
+  return [
+    'Estas opciones del catalogo de Habita pueden encajar con tu busqueda:',
+    lines.join('\n\n'),
+    '',
+    'Si deseas, te ayudo a filtrar por distrito y presupuesto para darte opciones mas precisas.',
+  ].join('\n');
+}
+
+function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
+  const top = (properties || []).slice(0, 3);
+  const profileHint = profile === 'vendedor'
+    ? 'Si deseas vender tu inmueble, te conecto con un asesor comercial para valorizacion.'
+    : 'Si buscas compra o alquiler, dime distrito y presupuesto para filtrar mejor.';
+
+  if (!top.length) {
+    return [
+      'Estoy operando en modo local sin IA externa en este momento.',
+      'No tengo el catalogo en vivo disponible ahora mismo.',
+      `Asesor directo: ${waUrl}`,
+    ].join('\n');
+  }
+
+  const list = top.map((p, idx) => `${idx + 1}. ${p.title} - ${p.price}\n${p.url}`).join('\n\n');
+  return [
+    'Estoy operando en modo local sin IA externa.',
+    'Te comparto opciones destacadas del catalogo:',
+    list,
+    '',
+    profileHint,
+  ].join('\n');
+}
+
+function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   const t = String(text || '').toLowerCase();
 
   if (!t) return null;
@@ -113,6 +217,9 @@ function buildRuleBasedReply({ text, profile, waUrl }) {
       : 'si buscas comprar o alquilar, te ayudo a filtrar por zona, presupuesto y tipo de propiedad.';
     return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
   }
+
+  const propertyReply = buildPropertyRuleReply({ text: t, properties, waUrl });
+  if (propertyReply) return propertyReply;
 
   return null;
 }
@@ -161,12 +268,25 @@ module.exports = async (req, res) => {
     text: lastUserMessage,
     profile: normalizedProfile,
     waUrl,
+    properties,
   });
 
   if (ruleReply) {
     return res.json({
       reply: ruleReply,
       provider: 'rule-based',
+      bypassedLlm: true,
+    });
+  }
+
+  if (RULES_ONLY_MODE) {
+    return res.json({
+      reply: buildRulesOnlyFallbackReply({
+        properties,
+        waUrl,
+        profile: normalizedProfile,
+      }),
+      provider: 'rules-only',
       bypassedLlm: true,
     });
   }
