@@ -42,6 +42,14 @@ module.exports = {
         GROQ_MODEL: 'llama-3.3-70b-versatile',
         GROQ_TIMEOUT_MS: '10000',
 
+        // Cambio automatico de proveedor antes de topar cuota gratuita
+        LLM_BUDGET_GUARD_ENABLED: 'true',
+        LLM_BUDGET_SWITCH_THRESHOLD: '0.85',
+        LLM_QUOTA_COOLDOWN_MS: '3600000',
+        GEMINI_DAILY_SOFT_LIMIT_RPD: '400',
+        GROQ_DAILY_SOFT_LIMIT_RPD: '300',
+        OLLAMA_DAILY_SOFT_LIMIT_RPD: '0',
+
         SUPABASE_URL: '',
         SUPABASE_SERVICE_ROLE_KEY: '',
 

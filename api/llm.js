@@ -11,9 +11,85 @@ const OLLAMA_COOLDOWN_MS = parseInt(process.env.OLLAMA_COOLDOWN_MS || '60000', 1
 const OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK = String(process.env.OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK || 'false').toLowerCase() === 'true';
 const LLM_ENABLE_OLLAMA_FALLBACK = String(process.env.LLM_ENABLE_OLLAMA_FALLBACK || 'true').toLowerCase() === 'true';
 const LLM_ENABLE_GEMINI_FALLBACK = String(process.env.LLM_ENABLE_GEMINI_FALLBACK || 'false').toLowerCase() === 'true';
+const LLM_BUDGET_GUARD_ENABLED = String(process.env.LLM_BUDGET_GUARD_ENABLED || 'false').toLowerCase() === 'true';
+const LLM_BUDGET_SWITCH_THRESHOLD = Number.parseFloat(process.env.LLM_BUDGET_SWITCH_THRESHOLD || '0.85');
+const LLM_QUOTA_COOLDOWN_MS = parseInt(process.env.LLM_QUOTA_COOLDOWN_MS || '3600000', 10);
+const GEMINI_DAILY_SOFT_LIMIT_RPD = parseInt(process.env.GEMINI_DAILY_SOFT_LIMIT_RPD || '0', 10);
+const GROQ_DAILY_SOFT_LIMIT_RPD = parseInt(process.env.GROQ_DAILY_SOFT_LIMIT_RPD || '0', 10);
+const OLLAMA_DAILY_SOFT_LIMIT_RPD = parseInt(process.env.OLLAMA_DAILY_SOFT_LIMIT_RPD || '0', 10);
 
 let ollamaFailures = 0;
 let ollamaDisabledUntil = 0;
+
+const providerCooldownUntil = {
+  ollama: 0,
+  gemini: 0,
+  groq: 0,
+};
+
+const providerDailyUsage = {
+  ollama: { dayKey: '', requests: 0 },
+  gemini: { dayKey: '', requests: 0 },
+  groq: { dayKey: '', requests: 0 },
+};
+
+function getDayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function resetDailyUsageIfNeeded(provider) {
+  const key = getDayKey();
+  if (providerDailyUsage[provider].dayKey !== key) {
+    providerDailyUsage[provider].dayKey = key;
+    providerDailyUsage[provider].requests = 0;
+  }
+}
+
+function incrementDailyUsage(provider) {
+  if (!providerDailyUsage[provider]) return;
+  resetDailyUsageIfNeeded(provider);
+  providerDailyUsage[provider].requests += 1;
+}
+
+function getProviderSoftLimit(provider) {
+  if (provider === 'gemini') return Number.isFinite(GEMINI_DAILY_SOFT_LIMIT_RPD) ? GEMINI_DAILY_SOFT_LIMIT_RPD : 0;
+  if (provider === 'groq') return Number.isFinite(GROQ_DAILY_SOFT_LIMIT_RPD) ? GROQ_DAILY_SOFT_LIMIT_RPD : 0;
+  if (provider === 'ollama') return Number.isFinite(OLLAMA_DAILY_SOFT_LIMIT_RPD) ? OLLAMA_DAILY_SOFT_LIMIT_RPD : 0;
+  return 0;
+}
+
+function isNearSoftLimit(provider) {
+  if (!LLM_BUDGET_GUARD_ENABLED) return false;
+
+  const softLimit = getProviderSoftLimit(provider);
+  if (!softLimit || softLimit <= 0) return false;
+
+  resetDailyUsageIfNeeded(provider);
+  const used = providerDailyUsage[provider].requests;
+  const threshold = Number.isFinite(LLM_BUDGET_SWITCH_THRESHOLD) ? LLM_BUDGET_SWITCH_THRESHOLD : 0.85;
+  return used >= Math.floor(softLimit * threshold);
+}
+
+function isQuotaOrRateLimitError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return /(429|rate limit|quota|resource has been exhausted|exceeded|too many requests|limite|l[ií]mite)/.test(msg);
+}
+
+function setProviderCooldown(provider, ms) {
+  const windowMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
+  if (!windowMs) return;
+  providerCooldownUntil[provider] = Date.now() + windowMs;
+}
+
+function isProviderCoolingDown(provider) {
+  const until = providerCooldownUntil[provider] || 0;
+  if (!until) return false;
+  if (Date.now() >= until) {
+    providerCooldownUntil[provider] = 0;
+    return false;
+  }
+  return true;
+}
 
 function normalizeHistory(messages) {
   return messages
@@ -87,9 +163,13 @@ async function callOllamaWithModel({ systemPrompt, history, model, providerLabel
     if (!reply) throw new Error('Ollama devolvio una respuesta vacia.');
 
     markOllamaSuccess();
+    incrementDailyUsage('ollama');
     return { provider: providerLabel, reply, model };
   } catch (err) {
     markOllamaFailure();
+    if (isQuotaOrRateLimitError(err)) {
+      setProviderCooldown('ollama', LLM_QUOTA_COOLDOWN_MS);
+    }
     throw err;
   } finally {
     timeout.clear();
@@ -158,7 +238,13 @@ async function callGroq({ systemPrompt, history, apiKey }) {
     const reply = data?.choices?.[0]?.message?.content?.trim();
     if (!reply) throw new Error('Groq devolvio una respuesta vacia.');
 
+    incrementDailyUsage('groq');
     return { provider: 'groq', reply };
+  } catch (err) {
+    if (isQuotaOrRateLimitError(err)) {
+      setProviderCooldown('groq', LLM_QUOTA_COOLDOWN_MS);
+    }
+    throw err;
   } finally {
     timeout.clear();
   }
@@ -206,7 +292,14 @@ async function callGemini({ systemPrompt, history, apiKey }) {
       .trim();
 
     if (!reply) throw new Error('Gemini devolvio una respuesta vacia.');
+
+    incrementDailyUsage('gemini');
     return { provider: 'gemini', reply };
+  } catch (err) {
+    if (isQuotaOrRateLimitError(err)) {
+      setProviderCooldown('gemini', LLM_QUOTA_COOLDOWN_MS);
+    }
+    throw err;
   } finally {
     timeout.clear();
   }
@@ -253,6 +346,16 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
   const attempts = [];
 
   for (const provider of providers) {
+    if (isProviderCoolingDown(provider)) {
+      attempts.push({ provider, error: 'provider-cooling-down' });
+      continue;
+    }
+
+    if (isNearSoftLimit(provider)) {
+      attempts.push({ provider, error: 'provider-near-soft-limit' });
+      continue;
+    }
+
     if (provider === 'ollama' && !allowOllamaFallback && primary !== 'ollama') {
       continue;
     }
@@ -311,6 +414,27 @@ function getLlmStatus() {
       ollamaEnabled: LLM_ENABLE_OLLAMA_FALLBACK,
       geminiEnabled: LLM_ENABLE_GEMINI_FALLBACK,
       groqEnabled: String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true',
+    },
+    budgetGuard: {
+      enabled: LLM_BUDGET_GUARD_ENABLED,
+      switchThreshold: Number.isFinite(LLM_BUDGET_SWITCH_THRESHOLD) ? LLM_BUDGET_SWITCH_THRESHOLD : 0.85,
+      quotaCooldownMs: LLM_QUOTA_COOLDOWN_MS,
+      limits: {
+        geminiDailySoftRpd: GEMINI_DAILY_SOFT_LIMIT_RPD,
+        groqDailySoftRpd: GROQ_DAILY_SOFT_LIMIT_RPD,
+        ollamaDailySoftRpd: OLLAMA_DAILY_SOFT_LIMIT_RPD,
+      },
+      usage: {
+        dayKey: getDayKey(),
+        geminiRequests: providerDailyUsage.gemini.requests,
+        groqRequests: providerDailyUsage.groq.requests,
+        ollamaRequests: providerDailyUsage.ollama.requests,
+      },
+      cooldown: {
+        geminiUntil: providerCooldownUntil.gemini ? new Date(providerCooldownUntil.gemini).toISOString() : null,
+        groqUntil: providerCooldownUntil.groq ? new Date(providerCooldownUntil.groq).toISOString() : null,
+        ollamaUntil: providerCooldownUntil.ollama ? new Date(providerCooldownUntil.ollama).toISOString() : null,
+      },
     },
     groq: {
       enabledAsFallback: String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true',

@@ -196,6 +196,31 @@ Para minimizar fallos sin perder calidad:
 
 Con esto evitas depender de Ollama local y no dependes de tu PC encendida.
 
+### Cambio automatico antes del limite gratuito (budget guard)
+
+El backend ahora puede cambiar de proveedor automaticamente antes de tocar el limite.
+
+Variables:
+
+```env
+LLM_BUDGET_GUARD_ENABLED=true
+LLM_BUDGET_SWITCH_THRESHOLD=0.85
+LLM_QUOTA_COOLDOWN_MS=3600000
+
+GEMINI_DAILY_SOFT_LIMIT_RPD=400
+GROQ_DAILY_SOFT_LIMIT_RPD=300
+OLLAMA_DAILY_SOFT_LIMIT_RPD=0
+```
+
+Como funciona:
+- Cuando un proveedor llega al 85% de su limite suave diario, se salta y pasa al siguiente.
+- Si un proveedor devuelve error de cuota/rate-limit (429), entra en cooldown temporal.
+- El chat sigue con el siguiente proveedor (Gemini -> Groq -> reglas).
+
+Nota:
+- Estos limites suaves son configurables por ti.
+- Debes ajustar los numeros segun tus limites reales en AI Studio/Groq.
+
 ### Activacion en Vercel (5 minutos)
 
 1. Ir a Vercel -> Project -> Settings -> Environment Variables.
