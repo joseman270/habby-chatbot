@@ -166,6 +166,128 @@ Resultado esperado:
 Nota:
 - Esto no usa tu PC ni requiere sudo en hosting.
 
+## 4.3 Prueba segura de Qwen/Ollama sin sudo (canary controlado)
+
+Si quieres intentar Ollama dentro de hosting restringido, hazlo como prueba aislada y con rollback preparado.
+No ejecutes esta prueba directo sobre trafico productivo.
+
+### Objetivo
+
+- Validar si el proveedor permite proceso persistente en user-space sin root.
+- Medir si el proceso sobrevive al menos 20-30 minutos bajo carga ligera.
+- Salir sin impacto si el host mata el proceso.
+
+### Paso 1: congelar produccion antes de probar
+
+Deja produccion en perfil cloud estable (Vercel o tu backend actual):
+
+```env
+LLM_PRIMARY=gemini
+CHAT_RULES_ONLY_MODE=false
+CHAT_ENABLE_RULES_FALLBACK=true
+LLM_ENABLE_GEMINI_FALLBACK=true
+LLM_ENABLE_GROQ_FALLBACK=true
+LLM_ENABLE_OLLAMA_FALLBACK=false
+```
+
+Asi, aunque falle la prueba local, el chat comercial sigue atendiendo.
+
+### Paso 2: instalar Ollama en user-space (sin sudo)
+
+En SSH del hosting restringido:
+
+```bash
+mkdir -p "$HOME/.local" "$HOME/.local/bin" "$HOME/.ollama"
+curl -fsSL -o /tmp/ollama-linux-amd64.tgz "https://ollama.com/download/ollama-linux-amd64.tgz"
+tar -xzf /tmp/ollama-linux-amd64.tgz -C "$HOME/.local"
+"$HOME/.local/bin/ollama" --version
+```
+
+Si no existe `~/.local/bin/ollama`, busca el binario y crea enlace:
+
+```bash
+find "$HOME/.local" -type f -name ollama
+ln -sf "$HOME/.local/ollama" "$HOME/.local/bin/ollama"
+```
+
+### Paso 3: levantar servicio temporal y registrar PID
+
+```bash
+export OLLAMA_MODELS="$HOME/.ollama/models"
+nohup "$HOME/.local/bin/ollama" serve > "$HOME/ollama-serve.log" 2>&1 &
+echo $! > "$HOME/ollama.pid"
+sleep 3
+curl -sS http://127.0.0.1:11434/api/tags
+```
+
+### Paso 4: prueba con modelo pequeno primero (3B)
+
+```bash
+"$HOME/.local/bin/ollama" pull qwen2.5:3b-instruct
+curl -sS http://127.0.0.1:11434/api/chat \
+	-H "Content-Type: application/json" \
+	-d '{"model":"qwen2.5:3b-instruct","stream":false,"messages":[{"role":"user","content":"Saluda en una linea"}]}'
+```
+
+Si 3B no aguanta, no intentes 7B en ese hosting.
+
+### Paso 5: monitoreo de supervivencia (20-30 min)
+
+```bash
+for i in $(seq 1 30); do
+	if ! kill -0 "$(cat "$HOME/ollama.pid")" 2>/dev/null; then
+		echo "Proceso finalizado por el host o por OOM en minuto $i"
+		break
+	fi
+	if ! curl -fsS http://127.0.0.1:11434/api/tags >/dev/null; then
+		echo "API no responde en minuto $i"
+		break
+	fi
+	echo "OK minuto $i"
+	sleep 60
+done
+```
+
+Criterio practico de exito:
+- Proceso vivo + API respondiendo durante 20-30 minutos.
+- Sin reinicios espontaneos en `~/ollama-serve.log`.
+
+### Paso 6: rollback inmediato (si lo matan o degrada)
+
+```bash
+if [ -f "$HOME/ollama.pid" ]; then
+	kill "$(cat "$HOME/ollama.pid")" 2>/dev/null || true
+	rm -f "$HOME/ollama.pid"
+fi
+```
+
+En produccion, mantener:
+
+```env
+LLM_PRIMARY=gemini
+LLM_ENABLE_OLLAMA_FALLBACK=false
+CHAT_ENABLE_RULES_FALLBACK=true
+```
+
+Opcional para liberar espacio:
+
+```bash
+"$HOME/.local/bin/ollama" rm qwen2.5:3b-instruct || true
+```
+
+## 4.4 Si el host mata procesos: decision segura
+
+Si la prueba falla, no insistir en Ollama 24/7 en hosting compartido.
+
+Plan estable recomendado:
+
+1. Gemini primario.
+2. Groq fallback.
+3. Reglas como ultima capa.
+4. Budget guard activo para autoswitch por cuota.
+
+Esta arquitectura ya esta soportada por el backend actual y evita depender de PC encendida o de permisos root.
+
 ### Donde obtener la clave de Gemini
 
 1. Entra a Google AI Studio: https://aistudio.google.com/app/apikey
