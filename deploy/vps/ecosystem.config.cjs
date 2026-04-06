@@ -43,11 +43,13 @@ module.exports = {
         GROQ_TIMEOUT_MS: '10000',
 
         // Cambio automatico de proveedor antes de topar cuota gratuita
+        // Perfil sugerido: ~100 conversaciones/dia
+        // Supuesto: 7 requests promedio por conversacion (~700 requests/dia)
         LLM_BUDGET_GUARD_ENABLED: 'true',
-        LLM_BUDGET_SWITCH_THRESHOLD: '0.85',
+        LLM_BUDGET_SWITCH_THRESHOLD: '0.80',
         LLM_QUOTA_COOLDOWN_MS: '3600000',
-        GEMINI_DAILY_SOFT_LIMIT_RPD: '400',
-        GROQ_DAILY_SOFT_LIMIT_RPD: '300',
+        GEMINI_DAILY_SOFT_LIMIT_RPD: '600',
+        GROQ_DAILY_SOFT_LIMIT_RPD: '350',
         OLLAMA_DAILY_SOFT_LIMIT_RPD: '0',
 
         SUPABASE_URL: '',

@@ -212,6 +212,26 @@ GROQ_DAILY_SOFT_LIMIT_RPD=300
 OLLAMA_DAILY_SOFT_LIMIT_RPD=0
 ```
 
+Perfil recomendado para 100 conversaciones/dia:
+
+```env
+# Estimacion: 7 requests promedio por conversacion
+# 100 conversaciones/dia ~= 700 requests/dia
+LLM_BUDGET_GUARD_ENABLED=true
+LLM_BUDGET_SWITCH_THRESHOLD=0.80
+LLM_QUOTA_COOLDOWN_MS=3600000
+
+GEMINI_DAILY_SOFT_LIMIT_RPD=600
+GROQ_DAILY_SOFT_LIMIT_RPD=350
+OLLAMA_DAILY_SOFT_LIMIT_RPD=0
+```
+
+Interpretacion del perfil (aprox):
+- Gemini atiende primero hasta 80% de 600 ~= 480 requests/dia.
+- Groq toma el relevo hasta 80% de 350 ~= 280 requests/dia.
+- Total cloud antes de reglas ~= 760 requests/dia.
+- Si hay picos o limites 429, entra cooldown y se usa el siguiente proveedor.
+
 Como funciona:
 - Cuando un proveedor llega al 85% de su limite suave diario, se salta y pasa al siguiente.
 - Si un proveedor devuelve error de cuota/rate-limit (429), entra en cooldown temporal.
