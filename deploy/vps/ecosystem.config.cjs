@@ -27,6 +27,12 @@ module.exports = {
         OLLAMA_MAX_FAILS: '3',
         OLLAMA_COOLDOWN_MS: '60000',
 
+        // Opcion de alta calidad sin Ollama local (API con free tier)
+        GEMINI_API_KEY: '',
+        GEMINI_MODEL: 'gemini-1.5-flash',
+        GEMINI_TIMEOUT_MS: '10000',
+        LLM_ENABLE_GEMINI_FALLBACK: 'false',
+
         // Para operar sin creditos externos, dejar en false.
         // Si deseas fallback cloud de emergencia, cambiar a true y completar GROQ_API_KEY.
         LLM_ENABLE_GROQ_FALLBACK: 'false',

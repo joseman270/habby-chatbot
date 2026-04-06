@@ -138,6 +138,33 @@ Limitacion:
 
 Recomendado como plan estable de cierre cuando no hay root/sudo.
 
+## 4.2 Ruta B3 (recomendada para calidad): Gemini primario + fallback por reglas
+
+Si quieres respuestas mas coherentes y conversacionales sin depender de Ollama local,
+usa un proveedor cloud con free tier como Gemini y deja fallback por reglas.
+
+Variables sugeridas en Vercel:
+
+```env
+LLM_PRIMARY=gemini
+GEMINI_API_KEY=TU_API_KEY
+GEMINI_MODEL=gemini-1.5-flash
+GEMINI_TIMEOUT_MS=10000
+
+CHAT_RULES_ONLY_MODE=false
+CHAT_ENABLE_RULES_FALLBACK=true
+
+LLM_ENABLE_GEMINI_FALLBACK=false
+LLM_ENABLE_GROQ_FALLBACK=false
+```
+
+Resultado esperado:
+- Conversacion mas natural y contextual.
+- Si Gemini falla por cuota/latencia, responde automaticamente por reglas (sin mensaje tecnico de safe-mode al cliente).
+
+Nota:
+- Esto no usa tu PC ni requiere sudo en hosting.
+
 ### Activacion en Vercel (5 minutos)
 
 1. Ir a Vercel -> Project -> Settings -> Environment Variables.
@@ -171,6 +198,33 @@ curl -X POST https://TU-DOMINIO/api/chat \
 Resultado esperado:
 - `provider: rules-only` o `provider: rules-fallback`
 - Sin mensaje de "Estoy en modo seguro..." para usuario final.
+
+### Activacion en Vercel (Gemini de alta calidad)
+
+1. Ir a Vercel -> Project -> Settings -> Environment Variables.
+2. Definir:
+
+```env
+LLM_PRIMARY=gemini
+GEMINI_API_KEY=TU_API_KEY
+GEMINI_MODEL=gemini-1.5-flash
+CHAT_RULES_ONLY_MODE=false
+CHAT_ENABLE_RULES_FALLBACK=true
+LLM_ENABLE_GROQ_FALLBACK=false
+```
+
+3. Redeploy.
+4. Probar:
+
+```bash
+curl https://TU-DOMINIO/api/chat
+```
+
+Debe mostrar:
+- `llm.primary: gemini`
+- `chatMode.rulesOnly: false`
+
+5. Probar mensaje real (compra/alquiler/agenda) y verificar proveedor `gemini`.
 
 ---
 

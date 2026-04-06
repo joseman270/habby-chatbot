@@ -1,12 +1,15 @@
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
 const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
 const DEFAULT_OLLAMA_FALLBACK_MODEL = process.env.OLLAMA_FALLBACK_MODEL || '';
+const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 const DEFAULT_GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
 const OLLAMA_TIMEOUT_MS = parseInt(process.env.OLLAMA_TIMEOUT_MS || '8000', 10);
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '10000', 10);
 const GROQ_TIMEOUT_MS = parseInt(process.env.GROQ_TIMEOUT_MS || '10000', 10);
 const OLLAMA_MAX_FAILS = parseInt(process.env.OLLAMA_MAX_FAILS || '3', 10);
 const OLLAMA_COOLDOWN_MS = parseInt(process.env.OLLAMA_COOLDOWN_MS || '60000', 10);
 const OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK = String(process.env.OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK || 'false').toLowerCase() === 'true';
+const LLM_ENABLE_GEMINI_FALLBACK = String(process.env.LLM_ENABLE_GEMINI_FALLBACK || 'false').toLowerCase() === 'true';
 
 let ollamaFailures = 0;
 let ollamaDisabledUntil = 0;
@@ -160,6 +163,60 @@ async function callGroq({ systemPrompt, history, apiKey }) {
   }
 }
 
+function toGeminiContents(history) {
+  return history.map((m) => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+}
+
+async function callGemini({ systemPrompt, history, apiKey }) {
+  if (!apiKey) throw new Error('GEMINI_API_KEY no configurada.');
+
+  const timeout = withTimeoutSignal(GEMINI_TIMEOUT_MS);
+  try {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(DEFAULT_GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: timeout.signal,
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: systemPrompt }],
+        },
+        contents: toGeminiContents(history),
+        generationConfig: {
+          maxOutputTokens: 1024,
+          temperature: 0.4,
+        },
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const msg = data?.error?.message || `Gemini error ${response.status}`;
+      throw new Error(msg);
+    }
+
+    const reply = (data?.candidates?.[0]?.content?.parts || [])
+      .map((p) => String(p?.text || '').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+
+    if (!reply) throw new Error('Gemini devolvio una respuesta vacia.');
+    return { provider: 'gemini', reply };
+  } finally {
+    timeout.clear();
+  }
+}
+
+function getProviderOrder(primary) {
+  if (primary === 'groq') return ['groq', 'gemini', 'ollama'];
+  if (primary === 'gemini') return ['gemini', 'ollama', 'groq'];
+  return ['ollama', 'gemini', 'groq'];
+}
+
 function safeReply({ waUrl, properties = [] }) {
   const top = properties.slice(0, 3);
   const summary = top.length
@@ -184,16 +241,20 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
   }
 
   const primary = (process.env.LLM_PRIMARY || 'ollama').toLowerCase();
+  const allowGeminiFallback = LLM_ENABLE_GEMINI_FALLBACK;
   const allowGroqFallback = String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true';
+  const geminiKey = process.env.GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
 
-  const providers = primary === 'groq'
-    ? ['groq', 'ollama']
-    : ['ollama', 'groq'];
+  const providers = getProviderOrder(primary);
 
   const attempts = [];
 
   for (const provider of providers) {
+    if (provider === 'gemini' && !allowGeminiFallback && primary !== 'gemini') {
+      continue;
+    }
+
     if (provider === 'groq' && !allowGroqFallback && primary !== 'groq') {
       continue;
     }
@@ -202,6 +263,11 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
       if (provider === 'ollama') {
         return await callOllamaSmart({ systemPrompt, history });
       }
+
+      if (provider === 'gemini') {
+        return await callGemini({ systemPrompt, history, apiKey: geminiKey });
+      }
+
       return await callGroq({ systemPrompt, history, apiKey: groqKey });
     } catch (err) {
       attempts.push({ provider, error: err.message });
@@ -228,6 +294,12 @@ function getLlmStatus() {
       consecutiveFailures: ollamaFailures,
       open: isOllamaOpen(),
       cooldownUntil: ollamaDisabledUntil ? new Date(ollamaDisabledUntil).toISOString() : null,
+    },
+    gemini: {
+      enabledAsFallback: LLM_ENABLE_GEMINI_FALLBACK,
+      configured: Boolean(process.env.GEMINI_API_KEY),
+      model: DEFAULT_GEMINI_MODEL,
+      timeoutMs: GEMINI_TIMEOUT_MS,
     },
     groq: {
       enabledAsFallback: String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true',
