@@ -1,0 +1,57 @@
+name: vercel-production-qa
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  qa-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      BASE_URL: ${{ vars.HABBY_BASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Resolve base URL
+        shell: bash
+        run: |
+          if [ -z "${BASE_URL}" ]; then
+            echo "BASE_URL=https://habby-chatbot.vercel.app" >> "$GITHUB_ENV"
+          else
+            echo "BASE_URL=${BASE_URL%/}" >> "$GITHUB_ENV"
+          fi
+          echo "Testing BASE_URL=${BASE_URL:-https://habby-chatbot.vercel.app}"
+
+      - name: Wait for deployment readiness
+        shell: bash
+        run: |
+          echo "Checking ${BASE_URL}/api/chat"
+          for attempt in $(seq 1 15); do
+            if curl -fsS "${BASE_URL}/api/chat" > /dev/null; then
+              echo "Endpoint ready on attempt ${attempt}"
+              exit 0
+            fi
+            echo "Attempt ${attempt} failed, waiting 20s..."
+            sleep 20
+          done
+          echo "Endpoint did not become ready in time"
+          exit 1
+
+      - name: Smoke test production
+        run: npm run smoke -- --base "${BASE_URL}"
+
+      - name: Conversational QA test production
+        run: npm run chat:qa -- --base "${BASE_URL}"

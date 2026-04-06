@@ -41,9 +41,69 @@ const tests = [
   },
 ];
 
+function normalizeForSearch(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 function includesAny(text, terms) {
   const t = String(text || '').toLowerCase();
   return terms.some((term) => t.includes(String(term).toLowerCase()));
+}
+
+function hasUrl(text) {
+  return /(https?:\/\/|www\.)/i.test(String(text || ''));
+}
+
+async function fetchProperties() {
+  const res = await fetch(`${base}/api/properties`, { method: 'GET' });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET /api/properties -> ${res.status}`);
+  }
+
+  const data = JSON.parse(text);
+  return Array.isArray(data?.properties) ? data.properties : [];
+}
+
+async function buildDetailPropertyTest() {
+  const fallback = {
+    name: 'Detalle propiedad puntual',
+    profile: 'comprador',
+    message: 'del terreno de san blas dime precio, metros y titulos',
+    mustIncludeAny: ['precio', 'area', 'metros', 'm2', 'm²', 'no especificado'],
+    requiresUrl: true,
+    allowsDisambiguation: true,
+  };
+
+  try {
+    const properties = await fetchProperties();
+    if (!properties.length) return fallback;
+
+    const preferred = properties.find((p) => normalizeForSearch(p.title).includes('san blas'))
+      || properties.find((p) => normalizeForSearch(p.type).includes('terreno'))
+      || properties[0];
+
+    const cleanedTitle = String(preferred.title || 'esta propiedad').replace(/[^\w\s\u00C0-\u024F-]/g, '').trim();
+    const titleTokens = normalizeForSearch(cleanedTitle)
+      .split(/\s+/)
+      .filter((token) => token.length >= 4)
+      .slice(0, 2);
+
+    return {
+      name: 'Detalle propiedad puntual',
+      profile: 'comprador',
+      message: `del inmueble ${cleanedTitle} dime precio, metros y titulos`,
+      mustIncludeAny: ['precio', 'area', 'metros', 'm2', 'm²', 'no especificado'],
+      shouldMentionAny: titleTokens,
+      requiresUrl: true,
+      allowsDisambiguation: true,
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 async function postChat({ profile, message }) {
@@ -78,6 +138,9 @@ async function getStatus() {
   console.log(`Chat regression base: ${base}`);
   let failed = 0;
 
+  const detailTest = await buildDetailPropertyTest();
+  const allTests = [...tests, detailTest];
+
   try {
     const st = await getStatus();
     if (!st.ok || !st.data?.ok) {
@@ -91,18 +154,25 @@ async function getStatus() {
     console.log(`FAIL status /api/chat -> ERROR ${err.message}`);
   }
 
-  for (const test of tests) {
+  for (const test of allTests) {
     try {
       const r = await postChat(test);
       const provider = r.data?.provider || 'unknown';
       const reply = String(r.data?.reply || '');
+      const replyNormalized = normalizeForSearch(reply);
 
       let caseFailed = false;
 
       if (!r.ok) caseFailed = true;
       if (!reply || reply.trim().length < 20) caseFailed = true;
       if (provider === 'safe-mode') caseFailed = true;
-      if (!includesAny(reply, test.mustIncludeAny)) caseFailed = true;
+      if (test.mustIncludeAny && !includesAny(reply, test.mustIncludeAny)) caseFailed = true;
+      if (test.shouldMentionAny && test.shouldMentionAny.length > 0 && !includesAny(reply, test.shouldMentionAny)) caseFailed = true;
+      if (test.requiresUrl && !hasUrl(reply)) {
+        const isDisambiguation = test.allowsDisambiguation
+          && /(varias propiedades parecidas|indica el numero|nombre exacto)/.test(replyNormalized);
+        if (!isDisambiguation) caseFailed = true;
+      }
 
       if (caseFailed) {
         failed += 1;

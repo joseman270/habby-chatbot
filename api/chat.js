@@ -7,6 +7,13 @@ const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
 const RULES_ONLY_MODE = String(process.env.CHAT_RULES_ONLY_MODE || 'false').toLowerCase() === 'true';
 const RULES_FALLBACK_ON_SAFE_MODE = String(process.env.CHAT_ENABLE_RULES_FALLBACK || 'true').toLowerCase() === 'true';
 const checkChatRateLimit = createRateLimiter({ windowMs: 60_000, max: 45 });
+const NO_DATA = 'No especificado en habita.pe';
+const CONTEXT_MAX_PROPERTIES = parseInt(process.env.PROPERTY_CONTEXT_MAX_ITEMS || '6', 10);
+const STOP_WORDS = new Set([
+  'para', 'como', 'quiero', 'dime', 'sobre', 'tengo', 'necesito', 'del', 'de',
+  'los', 'las', 'una', 'uno', 'por', 'con', 'sin', 'que', 'esta', 'este',
+  'inmueble', 'propiedad', 'habita', 'tema', 'mas', 'info', 'informacion',
+]);
 
 function normalizeProfile(profile) {
   const raw = String(profile || '').trim().toLowerCase();
@@ -93,6 +100,13 @@ function detectOperation(text) {
   return null;
 }
 
+function getQueryTokens(text) {
+  const normalized = normalizeForSearch(text);
+  return normalized
+    .split(/\s+/)
+    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+}
+
 function scorePropertyMatch(property, queryText) {
   const query = normalizeForSearch(queryText);
   const status = normalizeForSearch(property.status);
@@ -126,6 +140,114 @@ function isPropertySearchIntent(text) {
   return /(propiedad|propiedades|depa|departamento|casa|inmueble|comprar|alquilar|alquiler|venta|vender|distrito|zona|precio|cuarto|dormitorio)/.test(t);
 }
 
+function isPropertyDetailIntent(text) {
+  const t = normalizeForSearch(text);
+  return /(detalle|detalles|ficha|metros|metraje|m2|m²|area|precio|titulo|titulos|documentacion|documentos|sunarp|papeles|san blas|info)/.test(t);
+}
+
+function scorePropertyReference(property, queryText) {
+  const query = normalizeForSearch(queryText);
+  const title = normalizeForSearch(property.title);
+  const city = normalizeForSearch(property.city);
+  const address = normalizeForSearch(property.address);
+  const type = normalizeForSearch(property.type);
+  const features = normalizeForSearch(property.features);
+  const excerpt = normalizeForSearch(property.excerpt);
+
+  let score = 0;
+  const tokens = getQueryTokens(queryText);
+
+  if (title && query.includes(title) && title.length >= 8) score += 20;
+
+  tokens.forEach((token) => {
+    if (title.includes(token)) score += 7;
+    if (city.includes(token)) score += 4;
+    if (address.includes(token)) score += 4;
+    if (type.includes(token)) score += 3;
+    if (features.includes(token)) score += 1;
+    if (excerpt.includes(token)) score += 1;
+  });
+
+  return score;
+}
+
+function rankPropertiesByReference(properties, queryText) {
+  return (properties || [])
+    .map((property) => ({ property, score: scorePropertyReference(property, queryText) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+function formatPropertyField(value) {
+  const text = String(value || '').trim();
+  return text || NO_DATA;
+}
+
+function buildPropertyDetailReply({ property, waUrl }) {
+  const place = [property.city, property.address].filter(Boolean).join(' - ') || NO_DATA;
+
+  const lines = [
+    `Ficha encontrada en habita.pe para: ${property.title}`,
+    `- Tipo / estado: ${formatPropertyField(property.type)} / ${formatPropertyField(property.status)}`,
+    `- Precio publicado: ${formatPropertyField(property.price)}`,
+    `- Area total: ${formatPropertyField(property.areaTotal)}`,
+    `- Area de terreno: ${formatPropertyField(property.areaLand)}`,
+    `- Area construida: ${formatPropertyField(property.areaBuilt)}`,
+    `- Dormitorios: ${formatPropertyField(property.beds)} | Banos: ${formatPropertyField(property.baths)} | Garajes: ${formatPropertyField(property.garages)}`,
+    `- Ubicacion: ${place}`,
+    `- Documentacion y titulos: ${formatPropertyField(property.documentation)}`,
+  ];
+
+  if (property.features) lines.push(`- Caracteristicas: ${property.features}`);
+  if (property.excerpt) lines.push(`- Resumen: ${property.excerpt}`);
+  lines.push(`- URL: ${property.url}`);
+  lines.push('');
+  lines.push(`Si deseas, te comparo esta opcion con otras similares o te conecto con asesor: ${waUrl}`);
+
+  return lines.join('\n');
+}
+
+function buildPropertyDisambiguationReply({ matches }) {
+  const options = matches.slice(0, 3).map((row, idx) => {
+    const p = row.property;
+    const area = p.areaTotal || p.areaBuilt || NO_DATA;
+    return `${idx + 1}. ${p.title} | ${p.price} | ${area}`;
+  }).join('\n');
+
+  return [
+    'En habita.pe encontre varias propiedades parecidas a tu consulta:',
+    options,
+    '',
+    'Indicame el numero o el nombre exacto y te doy la ficha completa con metros, precio y documentacion.',
+  ].join('\n');
+}
+
+function buildPropertyDetailIntentReply({ text, properties, waUrl }) {
+  if (!isPropertyDetailIntent(text)) return null;
+
+  const ranked = rankPropertiesByReference(properties, text);
+  const positive = ranked.filter((row) => row.score >= 4);
+
+  if (!positive.length) {
+    return [
+      'No encontre una propiedad exacta con ese nombre en habita.pe en este momento.',
+      'Si me compartes el nombre tal como aparece en la publicacion o el distrito, te doy la ficha detallada.',
+      `Tambien te puedo conectar con un asesor: ${waUrl}`,
+    ].join('\n');
+  }
+
+  if (positive.length === 1) {
+    return buildPropertyDetailReply({ property: positive[0].property, waUrl });
+  }
+
+  const top = positive[0];
+  const second = positive[1];
+  if (!second || top.score - second.score >= 4) {
+    return buildPropertyDetailReply({ property: top.property, waUrl });
+  }
+
+  return buildPropertyDisambiguationReply({ matches: positive });
+}
+
 function buildPropertyRuleReply({ text, properties, waUrl }) {
   if (!isPropertySearchIntent(text)) return null;
 
@@ -146,7 +268,8 @@ function buildPropertyRuleReply({ text, properties, waUrl }) {
 
   const lines = selected.map((p, idx) => {
     const place = [p.city, p.address].filter(Boolean).join(' - ') || 'Ubicacion por confirmar';
-    return `${idx + 1}. ${p.title}\n${p.price} | ${place}\n${p.url}`;
+    const area = p.areaTotal || p.areaBuilt || NO_DATA;
+    return `${idx + 1}. ${p.title}\n${p.price} | ${place}\nArea: ${area}\n${p.url}`;
   });
 
   return [
@@ -171,7 +294,9 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
     ].join('\n');
   }
 
-  const list = top.map((p, idx) => `${idx + 1}. ${p.title} - ${p.price}\n${p.url}`).join('\n\n');
+  const list = top
+    .map((p, idx) => `${idx + 1}. ${p.title} - ${p.price}\nArea: ${p.areaTotal || p.areaBuilt || NO_DATA}\n${p.url}`)
+    .join('\n\n');
   return [
     'Estoy operando en modo local sin IA externa.',
     'Te comparto opciones destacadas del catalogo:',
@@ -246,6 +371,9 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
   }
 
+  const detailReply = buildPropertyDetailIntentReply({ text: t, properties, waUrl });
+  if (detailReply) return detailReply;
+
   const propertyReply = profile === 'comprador'
     ? buildPropertyRuleReply({ text: t, properties, waUrl })
     : null;
@@ -268,6 +396,35 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   }
 
   return null;
+}
+
+function selectPromptProperties({ properties, text, profile, maxItems = 6 }) {
+  if (!Array.isArray(properties) || !properties.length) return [];
+
+  const cap = Number.isFinite(maxItems) && maxItems > 0 ? maxItems : 6;
+  const message = String(text || '');
+
+  if (!message.trim()) {
+    return properties.slice(0, cap);
+  }
+
+  const ranked = properties
+    .map((property) => {
+      const byReference = scorePropertyReference(property, message);
+      const bySearch = profile === 'comprador' ? scorePropertyMatch(property, message) : 0;
+      return {
+        property,
+        score: (byReference * 1.5) + bySearch,
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected = ranked
+    .filter((row) => row.score > 0)
+    .slice(0, cap)
+    .map((row) => row.property);
+
+  return selected.length ? selected : properties.slice(0, cap);
 }
 
 module.exports = async (req, res) => {
@@ -302,18 +459,30 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'Se requiere el campo messages.' });
   }
 
+  const waUrl = `https://wa.me/${WHATSAPP}`;
+  const normalizedProfile = normalizeProfile(profile);
+  const lastUserMessage = getLastUserMessage(messages);
+
   let propertiesContext = 'No se pudieron cargar los inmuebles en este momento.';
   let properties = [];
+  let promptProperties = [];
   try {
     properties = await fetchProperties();
-    propertiesContext = propertiesToContext(properties);
+    promptProperties = selectPromptProperties({
+      properties,
+      text: lastUserMessage,
+      profile: normalizedProfile,
+      maxItems: CONTEXT_MAX_PROPERTIES,
+    });
+    const forPrompt = promptProperties.length ? promptProperties : properties;
+    propertiesContext = propertiesToContext(forPrompt, { maxItems: CONTEXT_MAX_PROPERTIES });
   } catch (err) {
     console.warn('[Habby] WP REST API caído:', err.message);
   }
 
-  const waUrl = `https://wa.me/${WHATSAPP}`;
-  const normalizedProfile = normalizeProfile(profile);
-  const lastUserMessage = getLastUserMessage(messages);
+  const contextProperties = promptProperties.length
+    ? promptProperties
+    : properties.slice(0, CONTEXT_MAX_PROPERTIES);
   const ruleReply = buildRuleBasedReply({
     text: lastUserMessage,
     profile: normalizedProfile,
@@ -332,7 +501,7 @@ module.exports = async (req, res) => {
   if (RULES_ONLY_MODE) {
     return res.json({
       reply: buildRulesOnlyFallbackReply({
-        properties,
+        properties: contextProperties,
         waUrl,
         profile: normalizedProfile,
       }),
@@ -342,6 +511,7 @@ module.exports = async (req, res) => {
   }
 
   const profilePrompt = getProfilePrompt(normalizedProfile);
+  const promptCatalogMeta = `Total de propiedades cargadas: ${properties.length}. Propiedades enviadas al LLM: ${contextProperties.length}.`;
   const systemPrompt = `Eres Habby, el asistente virtual de Habita Perú, una agencia inmobiliaria especializada en la compra, venta y alquiler de inmuebles en Perú.
 
 ## TU ROL
@@ -362,21 +532,35 @@ ${profilePrompt}
 - Respuestas concisas pero completas
 - Cuando recomiendas una propiedad, incluye siempre el link URL
 - Si no hay propiedades que coincidan exactamente, sugiere las más cercanas
-- No exceder 140 palabras salvo que pidan mas detalle
+- Responde entre 80 y 140 palabras. Si piden ficha detallada de una propiedad, puedes usar hasta 220 palabras
 - Cerrar siempre con una pregunta accionable de negocio
 
 ## REGLAS IMPORTANTES
 1. SOLO hablas de inmuebles y temas relacionados
 2. Si preguntan algo fuera del ámbito inmobiliario, redirige amablemente
-3. NUNCA inventes propiedades, precios ni datos que no estén en el listado
-4. Si no tienes la información exacta, deriva al asesor humano
+3. NUNCA inventes propiedades, precios, areas, metrajes ni documentacion
+4. Si un dato no existe en habita.pe, responde literalmente: "No especificado en habita.pe"
 5. Usa emojis con moderación — 📍🏠💰
+
+## MODO FICHA DETALLADA (cuando pregunten por un inmueble puntual)
+Responde siempre en este orden:
+1) Propiedad
+2) Precio publicado
+3) Area total
+4) Area de terreno
+5) Area construida
+6) Dormitorios, banos y garajes
+7) Documentacion y titulos
+8) URL de habita.pe
 
 ## CONTACTO DIRECTO CON ASESOR
 Cuando el usuario quiera hablar con un asesor o agendar visita:
 ${waUrl}
 
-## CATÁLOGO ACTUAL DE HABITA.PE
+## CATALOGO ACTUAL DE HABITA.PE
+${promptCatalogMeta}
+
+## PROPIEDADES RELEVANTES PARA ESTA CONSULTA
 ${propertiesContext}
 
 ## FORMATO
@@ -389,7 +573,7 @@ ${propertiesContext}
     const result = await generateChatReply({
       messages,
       systemPrompt,
-      properties,
+      properties: contextProperties,
       waUrl,
     });
 

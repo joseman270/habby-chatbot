@@ -158,6 +158,27 @@ Variables clave:
 - `npm run start`
 - `npm run dev`
 - `npm run smoke`
+- `npm run chat:qa`
+
+### QA de release (produccion)
+
+Antes de cerrar una entrega, ejecutar:
+
+1. `npm run chat:qa -- --base https://habby-chatbot.vercel.app`
+2. `npm run smoke -- --base https://habby-chatbot.vercel.app`
+
+Si ambos terminan en OK, la release queda validada funcional y conversacionalmente.
+
+### QA automatizada en GitHub
+
+Se incluye pipeline en `.github/workflows/vercel-production-qa.yml`:
+
+1. Espera a que el endpoint de Vercel este disponible.
+2. Ejecuta smoke test contra produccion.
+3. Ejecuta regresion conversacional contra produccion.
+
+Opcional:
+- Definir variable de repositorio `HABBY_BASE_URL` para apuntar a otro dominio de despliegue.
 
 ---
 
