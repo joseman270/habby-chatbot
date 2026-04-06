@@ -5,6 +5,7 @@ const { createRateLimiter } = require('./rate-limit');
 
 const WHATSAPP = process.env.WHATSAPP_NUMBER || '51999999999';
 const RULES_ONLY_MODE = String(process.env.CHAT_RULES_ONLY_MODE || 'false').toLowerCase() === 'true';
+const RULES_FALLBACK_ON_SAFE_MODE = String(process.env.CHAT_ENABLE_RULES_FALLBACK || 'true').toLowerCase() === 'true';
 const checkChatRateLimit = createRateLimiter({ windowMs: 60_000, max: 45 });
 
 function normalizeProfile(profile) {
@@ -235,6 +236,10 @@ module.exports = async (req, res) => {
     return res.json({
       ok: true,
       endpoint: 'POST /api/chat',
+      chatMode: {
+        rulesOnly: RULES_ONLY_MODE,
+        rulesFallbackOnSafeMode: RULES_FALLBACK_ON_SAFE_MODE,
+      },
       llm: getLlmStatus(),
     });
   }
@@ -274,7 +279,7 @@ module.exports = async (req, res) => {
   if (ruleReply) {
     return res.json({
       reply: ruleReply,
-      provider: 'rule-based',
+      provider: RULES_ONLY_MODE ? 'rules-only' : 'rule-based',
       bypassedLlm: true,
     });
   }
@@ -342,6 +347,25 @@ ${propertiesContext}
       properties,
       waUrl,
     });
+
+    if (result.provider === 'safe-mode' && RULES_FALLBACK_ON_SAFE_MODE) {
+      const rulesFallbackReply = buildPropertyRuleReply({
+        text: lastUserMessage,
+        properties,
+        waUrl,
+      }) || buildRulesOnlyFallbackReply({
+        properties,
+        waUrl,
+        profile: normalizedProfile,
+      });
+
+      return res.json({
+        reply: rulesFallbackReply,
+        provider: 'rules-fallback',
+        bypassedLlm: true,
+        llmAttempts: result.attempts || [],
+      });
+    }
 
     res.json({
       reply: result.reply,

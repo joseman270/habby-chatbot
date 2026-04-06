@@ -138,6 +138,40 @@ Limitacion:
 
 Recomendado como plan estable de cierre cuando no hay root/sudo.
 
+### Activacion en Vercel (5 minutos)
+
+1. Ir a Vercel -> Project -> Settings -> Environment Variables.
+2. Definir estas variables para Production:
+
+```env
+CHAT_RULES_ONLY_MODE=true
+CHAT_ENABLE_RULES_FALLBACK=true
+LLM_ENABLE_GROQ_FALLBACK=false
+```
+
+3. Guardar cambios y hacer `Redeploy` del ultimo commit de `main`.
+4. Verificar API de modo:
+
+```bash
+curl https://TU-DOMINIO/api/chat
+```
+
+Debe mostrar:
+- `chatMode.rulesOnly: true`
+- `chatMode.rulesFallbackOnSafeMode: true`
+
+5. Probar conversacion real:
+
+```bash
+curl -X POST https://TU-DOMINIO/api/chat \
+	-H "Content-Type: application/json" \
+	-d '{"messages":[{"role":"user","content":"busco depa en cusco para comprar"}],"profile":"comprador"}'
+```
+
+Resultado esperado:
+- `provider: rules-only` o `provider: rules-fallback`
+- Sin mensaje de "Estoy en modo seguro..." para usuario final.
+
 ---
 
 ## 5) Perfil recomendado sin creditos (ya soportado por el backend)
@@ -255,5 +289,10 @@ npm run smoke -- --base https://TU-DOMINIO
 4. Validar `/api/health`, `/api/availability`, `/api/chat`, `/api/appointments`.
 5. Apuntar frontend/widget al backend final.
 6. Monitorear 48h errores y latencia.
+
+Si estas en hosting sin sudo:
+1. Activar primero Ruta B2 en Vercel.
+2. Confirmar atencion comercial estable sin creditos.
+3. Evaluar infraestructura con root solo cuando quieras reactivar Ollama 24/7.
 
 Con este flujo cierras el proyecto con resiliencia real, sin depender de creditos para el camino principal.

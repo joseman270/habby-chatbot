@@ -21,10 +21,15 @@ module.exports = {
         LLM_PRIMARY: 'ollama',
         OLLAMA_BASE_URL: 'http://127.0.0.1:11434',
         OLLAMA_MODEL: 'qwen2.5:7b-instruct',
+        OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK: 'true',
+        OLLAMA_FALLBACK_MODEL: 'qwen2.5:3b-instruct',
         OLLAMA_TIMEOUT_MS: '8000',
         OLLAMA_MAX_FAILS: '3',
         OLLAMA_COOLDOWN_MS: '60000',
-        LLM_ENABLE_GROQ_FALLBACK: 'true',
+
+        // Para operar sin creditos externos, dejar en false.
+        // Si deseas fallback cloud de emergencia, cambiar a true y completar GROQ_API_KEY.
+        LLM_ENABLE_GROQ_FALLBACK: 'false',
         GROQ_API_KEY: '',
         GROQ_MODEL: 'llama-3.3-70b-versatile',
         GROQ_TIMEOUT_MS: '10000',
@@ -38,8 +43,18 @@ module.exports = {
         SMTP_PASS: '',
         SMTP_FROM: 'Habita Peru <no-reply@habita.pe>',
 
-        SLOTS_DAYS_AHEAD: '7',
+        CORS_ALLOW_ORIGINS: 'https://habita.pe,https://habby.pe',
+
+        // Modo sin LLM externo (activar en true si no hay Ollama 24/7)
+        CHAT_RULES_ONLY_MODE: 'false',
+        // Si el LLM falla y entra safe-mode, responder por reglas automaticamente
+        CHAT_ENABLE_RULES_FALLBACK: 'true',
+
+        // Citas: por defecto desde manana y ventana de 3 dias
+        SLOTS_MIN_DAYS_AHEAD: '1',
+        SLOTS_DAYS_AHEAD: '3',
         SLOT_MINUTES: '30',
+        APPOINTMENT_MIN_LEAD_HOURS: '12',
         WORK_START_HOUR: '9',
         WORK_END_HOUR: '18',
         WORK_DAYS: '1,2,3,4,5,6',
