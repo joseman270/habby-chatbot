@@ -183,6 +183,7 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
 
 function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   const t = String(text || '').toLowerCase();
+  const normalized = normalizeForSearch(text || '');
 
   if (!t) return null;
 
@@ -212,6 +213,32 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     ].join('\n');
   }
 
+  if (profile === 'vendedor' && /(vender|venta|tasar|valorar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble)/.test(normalized)) {
+    return [
+      'Perfecto. Te ayudo con el proceso para vender tu inmueble con Habita.',
+      'Para una valuacion comercial inicial, comparte por favor:',
+      '1. Tipo de inmueble',
+      '2. Distrito o zona',
+      '3. Area aproximada y numero de ambientes',
+      '4. Precio esperado (opcional)',
+      '',
+      `Si deseas atencion inmediata, te conecto con un asesor: ${waUrl}`,
+    ].join('\n');
+  }
+
+  if (profile === 'agente' && /(agente|corredor|comision|captar|cliente|colaborar|alianza|trabajar con habita|inmueble de cliente)/.test(normalized)) {
+    return [
+      'Excelente, podemos colaborar contigo en la comercializacion de inmuebles.',
+      'Para revisar tu caso, comparteme por favor:',
+      '1. Tipo de inmueble y zona',
+      '2. Operacion (venta o alquiler)',
+      '3. Rango de precio',
+      '4. Si ya tienes propietario o cliente calificado',
+      '',
+      `Coordinamos por asesor comercial aqui: ${waUrl}`,
+    ].join('\n');
+  }
+
   if (/(chiste|futbol|politica|receta|musica|tarea|programacion|codigo)/.test(t)) {
     const profileHint = profile === 'vendedor'
       ? 'si quieres vender, te explico como Habita acelera la comercializacion de tu inmueble.'
@@ -219,8 +246,26 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
   }
 
-  const propertyReply = buildPropertyRuleReply({ text: t, properties, waUrl });
+  const propertyReply = profile === 'comprador'
+    ? buildPropertyRuleReply({ text: t, properties, waUrl })
+    : null;
   if (propertyReply) return propertyReply;
+
+  if (profile === 'vendedor') {
+    return [
+      'Te acompano en la venta de tu inmueble con un enfoque comercial claro.',
+      'Si me compartes zona, tipo de inmueble y metraje, te doy una orientacion inicial.',
+      `Tambien puedes coordinar directo por WhatsApp: ${waUrl}`,
+    ].join('\n');
+  }
+
+  if (profile === 'agente') {
+    return [
+      'Te ayudo a estructurar una colaboracion comercial con Habita.',
+      'Cuantame tipo de inmueble, zona y operacion para orientarte mejor.',
+      `Si prefieres, coordinamos directo con un asesor: ${waUrl}`,
+    ].join('\n');
+  }
 
   return null;
 }
