@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "dev": "node index.js",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "chat:qa": "node scripts/chat-regression.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
