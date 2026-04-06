@@ -154,8 +154,9 @@ GEMINI_TIMEOUT_MS=10000
 CHAT_RULES_ONLY_MODE=false
 CHAT_ENABLE_RULES_FALLBACK=true
 
-LLM_ENABLE_GEMINI_FALLBACK=false
-LLM_ENABLE_GROQ_FALLBACK=false
+LLM_ENABLE_GEMINI_FALLBACK=true
+LLM_ENABLE_GROQ_FALLBACK=true
+LLM_ENABLE_OLLAMA_FALLBACK=false
 ```
 
 Resultado esperado:
@@ -164,6 +165,36 @@ Resultado esperado:
 
 Nota:
 - Esto no usa tu PC ni requiere sudo en hosting.
+
+### Donde obtener la clave de Gemini
+
+1. Entra a Google AI Studio: https://aistudio.google.com/app/apikey
+2. Crea o selecciona un proyecto.
+3. Genera una API Key.
+4. Guarda la clave en Vercel como `GEMINI_API_KEY`.
+
+### Es gratis? Tiene limites?
+
+- Si, Gemini tiene nivel gratuito para empezar.
+- No es ilimitado: tiene limites de RPM, TPM y RPD.
+- Los limites se aplican por proyecto (no por clave individual).
+- Los limites cambian por modelo y por nivel de uso.
+
+Consulta oficial de limites activos:
+- https://aistudio.google.com/rate-limit
+
+Consulta oficial de precios:
+- https://ai.google.dev/gemini-api/docs/pricing
+
+### Perfil hibrido recomendado (3 capas)
+
+Para minimizar fallos sin perder calidad:
+
+1. Gemini primario (calidad conversacional).
+2. Groq fallback (si Gemini falla por cuota/latencia).
+3. Rules fallback en backend (si ambos proveedores cloud fallan).
+
+Con esto evitas depender de Ollama local y no dependes de tu PC encendida.
 
 ### Activacion en Vercel (5 minutos)
 
@@ -210,7 +241,9 @@ GEMINI_API_KEY=TU_API_KEY
 GEMINI_MODEL=gemini-1.5-flash
 CHAT_RULES_ONLY_MODE=false
 CHAT_ENABLE_RULES_FALLBACK=true
-LLM_ENABLE_GROQ_FALLBACK=false
+LLM_ENABLE_GEMINI_FALLBACK=true
+LLM_ENABLE_GROQ_FALLBACK=true
+LLM_ENABLE_OLLAMA_FALLBACK=false
 ```
 
 3. Redeploy.
@@ -223,6 +256,7 @@ curl https://TU-DOMINIO/api/chat
 Debe mostrar:
 - `llm.primary: gemini`
 - `chatMode.rulesOnly: false`
+- `fallback.groqEnabled: true`
 
 5. Probar mensaje real (compra/alquiler/agenda) y verificar proveedor `gemini`.
 

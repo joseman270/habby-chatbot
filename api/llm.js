@@ -9,6 +9,7 @@ const GROQ_TIMEOUT_MS = parseInt(process.env.GROQ_TIMEOUT_MS || '10000', 10);
 const OLLAMA_MAX_FAILS = parseInt(process.env.OLLAMA_MAX_FAILS || '3', 10);
 const OLLAMA_COOLDOWN_MS = parseInt(process.env.OLLAMA_COOLDOWN_MS || '60000', 10);
 const OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK = String(process.env.OLLAMA_ENABLE_LOCAL_MODEL_FALLBACK || 'false').toLowerCase() === 'true';
+const LLM_ENABLE_OLLAMA_FALLBACK = String(process.env.LLM_ENABLE_OLLAMA_FALLBACK || 'true').toLowerCase() === 'true';
 const LLM_ENABLE_GEMINI_FALLBACK = String(process.env.LLM_ENABLE_GEMINI_FALLBACK || 'false').toLowerCase() === 'true';
 
 let ollamaFailures = 0;
@@ -213,7 +214,7 @@ async function callGemini({ systemPrompt, history, apiKey }) {
 
 function getProviderOrder(primary) {
   if (primary === 'groq') return ['groq', 'gemini', 'ollama'];
-  if (primary === 'gemini') return ['gemini', 'ollama', 'groq'];
+  if (primary === 'gemini') return ['gemini', 'groq', 'ollama'];
   return ['ollama', 'gemini', 'groq'];
 }
 
@@ -241,6 +242,7 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
   }
 
   const primary = (process.env.LLM_PRIMARY || 'ollama').toLowerCase();
+  const allowOllamaFallback = LLM_ENABLE_OLLAMA_FALLBACK;
   const allowGeminiFallback = LLM_ENABLE_GEMINI_FALLBACK;
   const allowGroqFallback = String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true';
   const geminiKey = process.env.GEMINI_API_KEY;
@@ -251,6 +253,10 @@ async function generateChatReply({ messages, systemPrompt, properties, waUrl }) 
   const attempts = [];
 
   for (const provider of providers) {
+    if (provider === 'ollama' && !allowOllamaFallback && primary !== 'ollama') {
+      continue;
+    }
+
     if (provider === 'gemini' && !allowGeminiFallback && primary !== 'gemini') {
       continue;
     }
@@ -300,6 +306,11 @@ function getLlmStatus() {
       configured: Boolean(process.env.GEMINI_API_KEY),
       model: DEFAULT_GEMINI_MODEL,
       timeoutMs: GEMINI_TIMEOUT_MS,
+    },
+    fallback: {
+      ollamaEnabled: LLM_ENABLE_OLLAMA_FALLBACK,
+      geminiEnabled: LLM_ENABLE_GEMINI_FALLBACK,
+      groqEnabled: String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true',
     },
     groq: {
       enabledAsFallback: String(process.env.LLM_ENABLE_GROQ_FALLBACK || 'false').toLowerCase() === 'true',

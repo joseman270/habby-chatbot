@@ -31,11 +31,13 @@ module.exports = {
         GEMINI_API_KEY: '',
         GEMINI_MODEL: 'gemini-1.5-flash',
         GEMINI_TIMEOUT_MS: '10000',
-        LLM_ENABLE_GEMINI_FALLBACK: 'false',
+        LLM_ENABLE_GEMINI_FALLBACK: 'true',
+        // Si no tienes Ollama 24/7, apagar fallback a Ollama para evitar latencia en failover
+        LLM_ENABLE_OLLAMA_FALLBACK: 'false',
 
         // Para operar sin creditos externos, dejar en false.
         // Si deseas fallback cloud de emergencia, cambiar a true y completar GROQ_API_KEY.
-        LLM_ENABLE_GROQ_FALLBACK: 'false',
+        LLM_ENABLE_GROQ_FALLBACK: 'true',
         GROQ_API_KEY: '',
         GROQ_MODEL: 'llama-3.3-70b-versatile',
         GROQ_TIMEOUT_MS: '10000',
