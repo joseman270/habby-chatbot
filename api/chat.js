@@ -278,6 +278,60 @@ function buildStructuredReply({ title, bullets = [], question = '' }) {
     .join('\n');
 }
 
+function hasStructuredPresentation(text) {
+  const value = String(text || '');
+  return /(^|\n)•\s+/m.test(value) && /\?\s*$/m.test(value.trim());
+}
+
+function getIntentQuestion(intent, waUrl) {
+  if (intent === 'booking') return '¿Te parece si empezamos con tus datos para agendar la cita?';
+  if (intent === 'advisor') return `¿Quieres que te conecte ahora con un asesor por WhatsApp (${waUrl})?`;
+  if (intent === 'property-search') return '¿Quieres que te filtre por distrito, presupuesto o tipo de inmueble?';
+  if (intent === 'property-detail') return '¿Quieres que compare esta opcion con otras similares?';
+  return '¿Quieres que te guie con una recomendacion concreta segun tu objetivo?';
+}
+
+function normalizeReplyPresentation({ reply, intent, waUrl }) {
+  const raw = String(reply || '').trim();
+  if (!raw) return raw;
+  if (hasStructuredPresentation(raw)) return raw;
+
+  const clean = raw
+    .replace(/\r/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const sentences = clean
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  let title = 'Orientacion personalizada';
+  let bullets = [];
+
+  if (sentences.length >= 1) {
+    title = sentences[0].replace(/[.!?]+$/, '').slice(0, 120) || title;
+  }
+
+  bullets = sentences.slice(1, 5);
+
+  if (!bullets.length) {
+    const chunks = clean
+      .split(/\n+/)
+      .map((line) => line.replace(/^[-•\d.)\s]+/, '').trim())
+      .filter(Boolean)
+      .slice(0, 4);
+
+    bullets = chunks.length ? chunks : [clean.slice(0, 220)];
+  }
+
+  return buildStructuredReply({
+    title,
+    bullets,
+    question: getIntentQuestion(intent, waUrl),
+  });
+}
+
 function detectIntent(text) {
   const t = normalizeForSearch(text);
   if (/(asesor|humano|telefono|whatsapp|llamar|contactar)/.test(t)) return 'advisor';
@@ -802,7 +856,11 @@ ${propertiesContext}
     }
 
     res.json({
-      reply: result.reply,
+      reply: normalizeReplyPresentation({
+        reply: result.reply,
+        intent,
+        waUrl,
+      }),
       provider: result.provider,
       fallbackAttempts: result.attempts || [],
       intent,
