@@ -40,6 +40,7 @@
   const BOOKING_MIN_DAYS = 1;
   const BOOKING_SLOT_MINUTES = 30;
   const BOOKING_MAX_SLOTS = 12;
+  const MAX_HISTORY = 20;
   const PRIMARY      = '#1E3A8A';
   const PRIMARY_DK   = '#1B2F73';
   const ACCENT       = '#11b965';
@@ -94,6 +95,16 @@
     leadId: null,
     data: {},
   };
+
+  function appendHistory(role, content) {
+    const text = String(content || '').trim();
+    if (!text) return;
+
+    history.push({ role, content: text });
+    if (history.length > MAX_HISTORY) {
+      history = history.slice(-MAX_HISTORY);
+    }
+  }
 
   function buildEndpoint(base, path) {
     const cleanBase = trimTrailingSlash(base || activeApiBase || DEFAULT_API_BASE);
@@ -451,7 +462,9 @@
     booking.data = {};
     booking.leadId = null;
     trackEvent('booking_flow_started', { profile: profile || 'unknown' });
-    addMsg('bot', 'Perfecto. Te ayudo a agendar una cita. Primero, ¿cuál es tu nombre completo?');
+    const botText = 'Perfecto. Te ayudo a agendar una cita. Primero, ¿cuál es tu nombre completo?';
+    addMsg('bot', botText);
+    appendHistory('assistant', botText);
   }
 
   function setProfile(selectedProfile) {
@@ -502,7 +515,9 @@
       hideTyping();
 
       if (!slots.length) {
-        addMsg('bot', 'Por ahora no tengo horarios libres para los proximos 3 dias desde manana. ¿Deseas que un asesor te contacte con una alternativa?');
+        const botText = 'Por ahora no tengo horarios libres para los proximos 3 dias desde manana. ¿Deseas que un asesor te contacte con una alternativa?';
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
         resetBooking();
         return;
       }
@@ -523,10 +538,14 @@
         };
       });
 
-      addChoices('Excelente. Elige uno de estos horarios disponibles:', choices);
+      const botText = 'Excelente. Elige uno de estos horarios disponibles:';
+      addChoices(botText, choices);
+      appendHistory('assistant', botText);
     } catch (err) {
       hideTyping();
-      addMsg('bot', `⚠️ ${String(err.message || err)}`);
+      const botText = `⚠️ ${String(err.message || err)}`;
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       resetBooking();
     }
   }
@@ -548,24 +567,32 @@
       const data = result.data;
       hideTyping();
 
-      addMsg('bot', data.uiMessage || 'Tu cita fue agendada correctamente.');
+      const botText = data.uiMessage || 'Tu cita fue agendada correctamente.';
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       trackEvent('booking_confirmed', {
         appointment_id: data?.appointment?.id || null,
         lead_id: booking.leadId,
       });
       if (data.email?.sent) {
-        addMsg('bot', 'También envié la confirmación a tu correo.');
+        const emailText = 'También envié la confirmación a tu correo.';
+        addMsg('bot', emailText);
+        appendHistory('assistant', emailText);
       }
       resetBooking();
     } catch (err) {
       hideTyping();
       if (Number(err?.status) === 409) {
-        addMsg('bot', `⚠️ ${String(err.message || 'Ese horario ya no esta disponible.')}`);
+        const botText = `⚠️ ${String(err.message || 'Ese horario ya no esta disponible.')}`;
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
         await createLeadAndOfferSlots();
         return;
       }
 
-      addMsg('bot', `⚠️ ${String(err?.message || 'No se pudo agendar por un error de conexión. Intenta de nuevo.')}`);
+      const botText = `⚠️ ${String(err?.message || 'No se pudo agendar por un error de conexión. Intenta de nuevo.')}`;
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       resetBooking();
     }
   }
@@ -574,42 +601,54 @@
     if (booking.step === 'name') {
       booking.data.name = text.slice(0, 120);
       booking.step = 'phone';
-      addMsg('bot', 'Gracias. Ahora compárteme tu número de celular.');
+      const botText = 'Gracias. Ahora compárteme tu número de celular.';
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       return true;
     }
 
     if (booking.step === 'phone') {
       const only = text.replace(/\D/g, '');
       if (only.length < 7) {
-        addMsg('bot', 'Necesito un número válido. Intenta nuevamente con tu celular.');
+        const botText = 'Necesito un número válido. Intenta nuevamente con tu celular.';
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
         return true;
       }
       booking.data.phone = text.slice(0, 40);
       booking.step = 'email';
-      addMsg('bot', 'Perfecto. ¿Cuál es tu correo? Si no deseas compartirlo, escribe "omitir".');
+      const botText = 'Perfecto. ¿Cuál es tu correo? Si no deseas compartirlo, escribe "omitir".';
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       return true;
     }
 
     if (booking.step === 'email') {
       const lower = text.toLowerCase();
       if (lower !== 'omitir' && !/^\S+@\S+\.\S+$/.test(text)) {
-        addMsg('bot', 'El correo parece inválido. Escribe uno válido o escribe "omitir".');
+        const botText = 'El correo parece inválido. Escribe uno válido o escribe "omitir".';
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
         return true;
       }
       booking.data.email = lower === 'omitir' ? null : text.slice(0, 180);
       booking.step = 'operation';
-      addChoices('¿Qué tipo de operación estás buscando?', [
+      const botText = '¿Qué tipo de operación estás buscando?';
+      addChoices(botText, [
         { label: 'Comprar', onClick: () => send('Comprar') },
         { label: 'Alquilar', onClick: () => send('Alquilar') },
         { label: 'Vender', onClick: () => send('Vender') },
       ]);
+      appendHistory('assistant', botText);
       return true;
     }
 
     if (booking.step === 'operation') {
       booking.data.operation = text.slice(0, 40);
       booking.step = 'district';
-      addMsg('bot', 'Genial. ¿En qué distrito te interesa la propiedad?');
+      const botText = 'Genial. ¿En qué distrito te interesa la propiedad?';
+      addMsg('bot', botText);
+      appendHistory('assistant', botText);
       return true;
     }
 
@@ -683,7 +722,7 @@
 
     addMsg('usr', t);
     trackEvent('chat_message_sent', { profile: profile || 'unknown', length: t.length });
-    history.push({ role: 'user', content: t });
+    appendHistory('user', t);
     inp.value = '';
     resize();
     sendBtn.disabled = true;
@@ -698,35 +737,44 @@
 
     if (booking.active) {
       const consumed = await handleBookingStep(t);
-      loading = false;
-      inp.focus();
-      if (consumed) return;
+      if (consumed) {
+        loading = false;
+        inp.focus();
+        return;
+      }
     }
 
     showTyping(isPropertyIntent(t));
 
     try {
+      const trimmedHistory = history.slice(-MAX_HISTORY);
       const result = await requestJsonWithFallback('chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ messages: history, profile }),
+        body:    JSON.stringify({ messages: trimmedHistory, profile }),
       });
       const d = result.data;
       hideTyping();
 
       if (d.reply) {
-        history.push({ role: 'assistant', content: d.reply });
         addMsg('bot', d.reply, false, { propertySuggestions: d?.ui?.propertySuggestions || [] });
+        appendHistory('assistant', d.reply);
         if (!open) badge.style.display = 'flex';
       } else {
-        addMsg('bot', '⚠️ Tuvimos un inconveniente al procesar tu consulta. Si quieres, lo intentamos de nuevo en unos segundos.');
+        const botText = '⚠️ Tuvimos un inconveniente al procesar tu consulta. Si quieres, lo intentamos de nuevo en unos segundos.';
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
       }
     } catch (err) {
       hideTyping();
       if (Number(err?.status) === 429) {
-        addMsg('bot', '⚠️ Estamos atendiendo muchas consultas. Intenta nuevamente en unos segundos.');
+        const botText = '⚠️ Estamos atendiendo muchas consultas. Intenta nuevamente en unos segundos.';
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
       } else {
-        addMsg('bot', `⚠️ ${String(err?.message || 'Parece que hubo un problema de conexión. Verifica tu internet y seguimos en segundos.')}`);
+        const botText = `⚠️ ${String(err?.message || 'Parece que hubo un problema de conexión. Verifica tu internet y seguimos en segundos.')}`;
+        addMsg('bot', botText);
+        appendHistory('assistant', botText);
       }
     }
 

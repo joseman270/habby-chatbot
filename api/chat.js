@@ -361,7 +361,7 @@ function addVariationToReply(baseReply, attemptCount = 0) {
       if (lines.length < 4) return r;
       return [lines[0], ...lines.slice(1).sort(() => Math.random() - 0.5)].join('\n');
     },
-    (r) => r.replace(/te /gi, 'te ').slice(0, Math.round(r.length * 0.9)), // 3: variación sutile
+    (r) => r.replace(/Perfecto,/gi, 'Entendido,').replace(/Claro,/gi, 'Por supuesto,'), // 3: variacion de tono
   ];
 
   const fn = variations[attemptCount % variations.length];
@@ -926,7 +926,7 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
 
   if (!top.length) {
     return buildStructuredReply({
-      title: 'Estoy operando en modo local sin IA externa',
+      title: 'Te acompano con una respuesta de respaldo',
       bullets: [
         'No tengo el catalogo en vivo disponible ahora mismo.',
         `Asesor directo: ${waUrl}`,
@@ -939,7 +939,7 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
     .map((p, idx) => `${idx + 1}. ${p.title} - ${p.price}\nArea: ${p.areaTotal || p.areaBuilt || NO_DATA}\n${p.url}`)
     .join('\n\n');
   return buildStructuredReply({
-    title: 'Estoy operando en modo local sin IA externa',
+    title: 'Te acompano con opciones destacadas',
     bullets: [
       'Te comparto opciones destacadas del catalogo:',
       list,
@@ -1363,10 +1363,10 @@ module.exports = async (req, res) => {
   // ANTI-LOOP: Check if exact same query was asked in last 2 turns (PRIORITY!)
   const recentUserQueries = messages
     .filter((m) => m.role === 'user')
-    .slice(-2)
+    .slice(-3, -1)
     .map((m) => normalizeForComparison(m.content));
   const normalizedCurrentQuery = normalizeForComparison(lastUserMessage);
-  const isExactRepeat = recentUserQueries.includes(normalizedCurrentQuery) && recentUserQueries.length > 0;
+  const isExactRepeat = recentUserQueries.includes(normalizedCurrentQuery);
 
   if (isExactRepeat && profile === 'comprador') {
     return res.json({
