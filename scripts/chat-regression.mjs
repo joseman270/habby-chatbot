@@ -26,12 +26,21 @@ const tests = [
     profile: 'vendedor',
     message: 'soy vendedor y quiero vender mi casa',
     mustIncludeAny: ['vender', 'inmueble', 'valuacion', 'valoracion'],
+    mustNotIncludeAny: ['ficha encontrada en habita.pe', 'catalogo de habita pueden encajar', 'en habita.pe encontre varias propiedades'],
+  },
+  {
+    name: 'Vendedor no cruza a compra',
+    profile: 'vendedor',
+    message: 'terreno san sebastian y es de 300m2',
+    mustIncludeAny: ['valuacion', 'venta', 'inmueble', 'asesor'],
+    mustNotIncludeAny: ['ficha encontrada en habita.pe', 'en habita.pe encontre varias propiedades'],
   },
   {
     name: 'Flujo agente',
     profile: 'agente',
     message: 'soy agente y quiero colaborar con comisiones',
     mustIncludeAny: ['colaborar', 'comercializacion', 'comision', 'asesor'],
+    mustNotIncludeAny: ['ficha encontrada en habita.pe', 'catalogo de habita pueden encajar', 'en habita.pe encontre varias propiedades'],
   },
   {
     name: 'Consulta abierta',
@@ -166,6 +175,7 @@ async function getStatus() {
       if (!reply || reply.trim().length < 20) caseFailed = true;
       if (provider === 'safe-mode') caseFailed = true;
       if (test.mustIncludeAny && !includesAny(reply, test.mustIncludeAny)) caseFailed = true;
+      if (test.mustNotIncludeAny && includesAny(reply, test.mustNotIncludeAny)) caseFailed = true;
       if (test.shouldMentionAny && test.shouldMentionAny.length > 0 && !includesAny(reply, test.shouldMentionAny)) caseFailed = true;
       if (test.requiresUrl && !hasUrl(reply)) {
         const isDisambiguation = test.allowsDisambiguation

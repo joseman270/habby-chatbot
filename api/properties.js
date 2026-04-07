@@ -107,6 +107,56 @@ function getTerms(embeddedTerms, taxonomy) {
     .join(', ');
 }
 
+function parseAdditionalDetails(raw) {
+  if (!raw) return [];
+
+  let source = raw;
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(source)) return [];
+
+  return source
+    .map((item) => {
+      if (Array.isArray(item) && item.length >= 2) {
+        return {
+          label: String(item[0] || '').trim(),
+          value: String(item[1] || '').trim(),
+        };
+      }
+
+      if (item && typeof item === 'object') {
+        const label = String(item.label || item.title || item.key || '').trim();
+        const value = String(item.value || item.val || '').trim();
+        return { label, value };
+      }
+
+      return { label: '', value: '' };
+    })
+    .filter((row) => row.label && row.value);
+}
+
+function findDetailValue(details, keywords) {
+  const keys = keywords.map((k) => normalizeSearch(k));
+  for (const row of details) {
+    const label = normalizeSearch(row.label);
+    if (keys.some((key) => label.includes(key))) {
+      return row.value;
+    }
+  }
+  return '';
+}
+
+function summarizeDetails(details, max = 4) {
+  const selected = details.slice(0, max).map((row) => `${row.label}: ${row.value}`);
+  return selected.join(' | ');
+}
+
 async function fetchProperties(options = {}) {
   const { allowStaleOnError = true } = options;
   const now = Date.now();
@@ -131,15 +181,17 @@ async function fetchProperties(options = {}) {
   }
 
   const properties = posts.map((post) => {
-    const meta = post.meta || {};
+    const meta = post.property_meta || post.meta || {};
     const emb = post._embedded || {};
     const terms = emb['wp:term'] ? emb['wp:term'].flat() : [];
+    const additionalDetails = parseAdditionalDetails(meta.REAL_HOMES_additional_details_list);
 
     const title = stripHtml(post.title?.rendered || 'Sin titulo');
     const excerpt = stripHtml(post.excerpt?.rendered || '').slice(0, 260);
     const description = stripHtml(post.content?.rendered || '').slice(0, 950);
 
-    const priceRaw = pickFirst(meta, ['REAL_HOMES_property_price'], '');
+    const detailPrice = findDetailValue(additionalDetails, ['precio', 'price']);
+    const priceRaw = pickFirst(meta, ['REAL_HOMES_property_price'], detailPrice);
     const priceCurrency = pickFirst(meta, ['REAL_HOMES_property_price_postfix'], 'USD');
     const price = formatPrice(priceRaw, priceCurrency);
 
@@ -148,11 +200,17 @@ async function fetchProperties(options = {}) {
     const baths = pickFirst(meta, ['REAL_HOMES_property_bathrooms'], NO_DATA);
     const garages = pickFirst(meta, ['REAL_HOMES_property_garage'], NO_DATA);
 
-    const builtAreaValue = pickFirst(meta, ['REAL_HOMES_property_size', 'REAL_HOMES_property_building_size'], '');
+    const detailBuiltArea = findDetailValue(additionalDetails, [
+      'area construida', 'metraje construido', 'construida', 'built',
+    ]);
+    const builtAreaValue = pickFirst(meta, ['REAL_HOMES_property_size', 'REAL_HOMES_property_building_size'], detailBuiltArea);
     const builtAreaUnit = pickFirst(meta, ['REAL_HOMES_property_size_postfix', 'REAL_HOMES_property_building_size_postfix'], 'm2');
     const builtArea = formatArea(builtAreaValue, builtAreaUnit, 'm2');
 
-    const landAreaValue = pickFirst(meta, ['REAL_HOMES_property_lot_size', 'REAL_HOMES_property_land_area', 'REAL_HOMES_property_plot_area'], '');
+    const detailLandArea = findDetailValue(additionalDetails, [
+      'area de terreno', 'metraje de terreno', 'terreno', 'lote', 'lot',
+    ]);
+    const landAreaValue = pickFirst(meta, ['REAL_HOMES_property_lot_size', 'REAL_HOMES_property_land_area', 'REAL_HOMES_property_plot_area'], detailLandArea);
     const landAreaUnit = pickFirst(meta, ['REAL_HOMES_property_lot_size_postfix', 'REAL_HOMES_property_land_area_postfix', 'REAL_HOMES_property_plot_area_postfix'], 'm2');
     const landArea = formatArea(landAreaValue, landAreaUnit, 'm2');
 
@@ -170,7 +228,12 @@ async function fetchProperties(options = {}) {
     const city = getTerms(terms, 'property-city') || '';
     const features = getTerms(terms, 'property-feature') || '';
 
-    const documentation = getDocumentationSummary(
+    const detailDocumentation = additionalDetails
+      .filter((row) => /(document|titulo|sunarp|papel|sanead|partida|legal)/i.test(row.label))
+      .map((row) => `${row.label}: ${row.value}`)
+      .join(' | ');
+
+    const documentation = detailDocumentation || getDocumentationSummary(
       meta,
       `${title} ${excerpt} ${description} ${features}`,
     );
@@ -195,6 +258,8 @@ async function fetchProperties(options = {}) {
       areaTotal,
       features,
       documentation,
+      additionalDetails,
+      detailsSummary: summarizeDetails(additionalDetails),
       excerpt,
       description,
     };

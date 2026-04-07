@@ -100,6 +100,29 @@ function detectOperation(text) {
   return null;
 }
 
+function detectPropertyTypePreference(text) {
+  const t = normalizeForSearch(text);
+  if (/(terreno|lote|lotizacion|lotes)/.test(t)) return 'terreno';
+  if (/(departamento|depa|dpto|flat)/.test(t)) return 'departamento';
+  if (/(casa|casona|vivienda)/.test(t)) return 'casa';
+  if (/(local|comercial|tienda)/.test(t)) return 'local';
+  if (/(oficina|office)/.test(t)) return 'oficina';
+  return null;
+}
+
+function typeMatchesPreference(property, preferredType) {
+  if (!preferredType) return true;
+  const haystack = normalizeForSearch(`${property.type} ${property.title} ${property.features}`);
+
+  if (preferredType === 'terreno') return /(terreno|lote|lotizacion|loteamiento)/.test(haystack);
+  if (preferredType === 'departamento') return /(departamento|depa|dpto|flat)/.test(haystack);
+  if (preferredType === 'casa') return /(casa|casona|vivienda)/.test(haystack);
+  if (preferredType === 'local') return /(local|comercial|tienda)/.test(haystack);
+  if (preferredType === 'oficina') return /(oficina|office)/.test(haystack);
+
+  return true;
+}
+
 function getQueryTokens(text) {
   const normalized = normalizeForSearch(text);
   return normalized
@@ -116,6 +139,7 @@ function scorePropertyMatch(property, queryText) {
   const address = normalizeForSearch(property.address);
   const features = normalizeForSearch(property.features);
   const operation = detectOperation(query);
+  const preferredType = detectPropertyTypePreference(queryText);
 
   let score = 0;
 
@@ -131,6 +155,10 @@ function scorePropertyMatch(property, queryText) {
     if (title.includes(word) || type.includes(word)) score += 2;
     if (features.includes(word)) score += 1;
   });
+
+  if (preferredType) {
+    score += typeMatchesPreference(property, preferredType) ? 8 : -6;
+  }
 
   return score;
 }
@@ -153,6 +181,7 @@ function scorePropertyReference(property, queryText) {
   const type = normalizeForSearch(property.type);
   const features = normalizeForSearch(property.features);
   const excerpt = normalizeForSearch(property.excerpt);
+  const preferredType = detectPropertyTypePreference(queryText);
 
   let score = 0;
   const tokens = getQueryTokens(queryText);
@@ -167,6 +196,10 @@ function scorePropertyReference(property, queryText) {
     if (features.includes(token)) score += 1;
     if (excerpt.includes(token)) score += 1;
   });
+
+  if (preferredType) {
+    score += typeMatchesPreference(property, preferredType) ? 10 : -8;
+  }
 
   return score;
 }
@@ -198,6 +231,7 @@ function buildPropertyDetailReply({ property, waUrl }) {
   ];
 
   if (property.features) lines.push(`- Caracteristicas: ${property.features}`);
+  if (property.detailsSummary) lines.push(`- Datos adicionales: ${property.detailsSummary}`);
   if (property.excerpt) lines.push(`- Resumen: ${property.excerpt}`);
   lines.push(`- URL: ${property.url}`);
   lines.push('');
@@ -306,6 +340,13 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
   ].join('\n');
 }
 
+function looksLikeOwnerPropertyDescription(text) {
+  const t = normalizeForSearch(text);
+  const hasPropertyWord = /(terreno|lote|casa|departamento|depa|local|oficina|inmueble)/.test(t);
+  const hasMetricOrAmount = /(m2|m²|metros|metraje|\b\d{2,5}\b)/.test(t);
+  return hasPropertyWord && hasMetricOrAmount;
+}
+
 function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForSearch(text || '');
@@ -351,6 +392,15 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     ].join('\n');
   }
 
+  if (profile === 'vendedor' && looksLikeOwnerPropertyDescription(normalized)) {
+    return [
+      'Perfecto, tomo los datos de tu inmueble para venta con Habita.',
+      'Con lo que indicas, el siguiente paso es una valuacion comercial con asesor.',
+      'Para continuar, confirma por favor: direccion exacta, numero de ambientes y precio esperado.',
+      `Si deseas atencion inmediata: ${waUrl}`,
+    ].join('\n');
+  }
+
   if (profile === 'agente' && /(agente|corredor|comision|captar|cliente|colaborar|alianza|trabajar con habita|inmueble de cliente)/.test(normalized)) {
     return [
       'Excelente, podemos colaborar contigo en la comercializacion de inmuebles.',
@@ -364,6 +414,14 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     ].join('\n');
   }
 
+  if (profile === 'agente' && looksLikeOwnerPropertyDescription(normalized)) {
+    return [
+      'Perfecto, revisemos tu oportunidad como agente con Habita.',
+      'Compárteme tipo de inmueble, zona, operacion y precio para evaluar encaje comercial.',
+      `Si prefieres, lo coordinamos directo con asesor comercial: ${waUrl}`,
+    ].join('\n');
+  }
+
   if (/(chiste|futbol|politica|receta|musica|tarea|programacion|codigo)/.test(t)) {
     const profileHint = profile === 'vendedor'
       ? 'si quieres vender, te explico como Habita acelera la comercializacion de tu inmueble.'
@@ -371,8 +429,10 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
     return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
   }
 
-  const detailReply = buildPropertyDetailIntentReply({ text: t, properties, waUrl });
-  if (detailReply) return detailReply;
+  if (profile === 'comprador') {
+    const detailReply = buildPropertyDetailIntentReply({ text: t, properties, waUrl });
+    if (detailReply) return detailReply;
+  }
 
   const propertyReply = profile === 'comprador'
     ? buildPropertyRuleReply({ text: t, properties, waUrl })
