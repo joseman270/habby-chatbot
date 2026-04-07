@@ -55,6 +55,14 @@ const tests = [
     expectStructured: true,
   },
   {
+    name: 'Comparativa casa vs departamento',
+    profile: 'vendedor',
+    message: 'que es mejor comprar una casa o un departamento?',
+    mustIncludeAny: ['casa', 'departamento', 'mantenimiento'],
+    mustNotIncludeAny: ['vender con habita te da mas alcance y mejor presentacion'],
+    expectStructured: true,
+  },
+  {
     name: 'Venta de terreno factible',
     profile: 'vendedor',
     message: 'hoy en dia es factible vender mi terreno en san sebastian?',

@@ -367,6 +367,11 @@ function isMarketAnalysisQuery(text) {
   return hasMarketSignal && hasRealEstateSignal;
 }
 
+function isBuyDecisionQuery(text) {
+  const t = normalizeForSearch(text);
+  return /(que es mejor comprar|que conviene comprar|casa o departamento|casa vs departamento|casa versus departamento|comparar (una )?casa (y|o) (un )?(departamento|depa|dpto)|casa y departamento)/.test(t);
+}
+
 function parsePriceNumberFromProperty(property) {
   const raw = String(property?.priceRaw || property?.price || '');
   const normalized = raw.replace(/[^\d.]/g, '');
@@ -534,6 +539,20 @@ function buildMarketAnalysisReply({ text, properties, waUrl }) {
       `También podemos revisarlo con un asesor aquí: ${waUrl}`,
     ],
     question: '¿Quieres que te lo desagregue por tipo de inmueble (casa, depa y terreno) en Cusco?',
+  });
+}
+
+function buildBuyDecisionReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Casa vs departamento: ¿qué conviene comprar?',
+    bullets: [
+      '🏠 Casa: más espacio, independencia y posibilidad de ampliación; suele requerir más mantenimiento y seguridad propia.',
+      '🏢 Departamento: menor mantenimiento y más seguridad; considera costos de mantenimiento/áreas comunes y reglas del edificio.',
+      'Para inversión, el rendimiento depende de ubicación, demanda de alquiler y presupuesto disponible.',
+      'Si quieres datos puntuales por distrito, puedo complementar con fuentes oficiales (SUNARP/INEI) y tu rango de inversión.',
+      `Si prefieres, también puedes conversar con un asesor: ${waUrl}`,
+    ],
+    question: '¿Buscas vivir o invertir y en qué zona/piensas comprar?',
   });
 }
 
@@ -857,6 +876,10 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
       ],
       question: '¿Te parece si empezamos ahora?',
     });
+  }
+
+  if (isBuyDecisionQuery(t)) {
+    return buildBuyDecisionReply({ waUrl });
   }
 
   if (isMarketAnalysisQuery(t)) {
