@@ -215,6 +215,43 @@ Tablas principales esperadas:
   - `OLLAMA_BASE_URL=http://127.0.0.1:11434`
   - `LLM_ENABLE_GROQ_FALLBACK=true`
 
+### Despliegue en DirectAdmin (FastGlobalServer)
+
+> **Recomendación de dominio:** crea un **subdominio en `habita.pe`** (ej. `chat.habita.pe`).
+> Usa `habby.pe` **solo** si deseas mantener el dominio antiguo como legado.
+
+#### Requisitos
+
+- Tu plan debe **soportar Node.js** en DirectAdmin (aparece como *Node.js App* o *Application Manager*).
+- Si **no** existe esa opción, mantén el API en Vercel y solo incrusta el script en WordPress.
+
+#### Campos del formulario (DirectAdmin → Create Web Application)
+
+- **Node.js version:** 18+ (recomendado 20+).
+- **Application mode:** `production` (establece `NODE_ENV=production`).
+- **Application root:** ruta física del proyecto (ej. `/home/usuario/domains/habita.pe/public_html/chat`).
+- **Application URL:** URL pública del subdominio (ej. `https://chat.habita.pe`).
+- **Application startup file:** `index.js`.
+- **Environment variables:** agrega cada par `NOMBRE=VALOR`.
+  - Si ves **“NO RESULT FOUND”**, es normal: crea la variable manualmente.
+
+#### Variables mínimas recomendadas
+
+- `WP_URL`, `MAX_PROPERTIES`, `WHATSAPP_NUMBER`
+- `LLM_PRIMARY`, `OLLAMA_*` o `GROQ_*` según tu proveedor
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (si usarás leads/citas)
+- `SMTP_*` (si usarás correos)
+
+#### Script para WordPress (Habita.pe)
+
+Coloca este script en el **footer** de WordPress:
+
+```html
+<script src="https://chat.habita.pe/habby.js" defer></script>
+```
+
+Si mantienes el API en Vercel, reemplaza el dominio por `https://habby-chatbot.vercel.app/habby.js`.
+
 ---
 
 ## 11) Roadmap de producto (importante)
