@@ -33,7 +33,16 @@ app.get(withApiPrefixes('health'), (req, res) => {
 
 app.get(['/', '/habby', '/habby/'], (req, res) => {
   const base = req.path.startsWith('/habby') ? '/habby' : '';
-  const origin = `${req.protocol}://${req.get('host')}`;
+  const accept = String(req.headers.accept || '').toLowerCase();
+  const wantsHtml = accept.includes('text/html') || String(req.query.view || '').toLowerCase() === 'chat';
+
+  if (base && wantsHtml) {
+    return res.redirect(302, `${base}/chat-completo.html`);
+  }
+
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || req.protocol;
+  const origin = `${protocol}://${req.get('host')}`;
   res.json({
     status: 'ok',
     service: 'Habby Chatbot — Habita Perú',
