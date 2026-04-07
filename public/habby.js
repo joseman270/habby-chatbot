@@ -6,9 +6,30 @@
 (function () {
   'use strict';
 
+  function trimTrailingSlash(url) {
+    return String(url || '').replace(/\/+$/, '');
+  }
+
+  function inferApiBaseFromScript() {
+    try {
+      const scriptTag = document.currentScript || Array.from(document.getElementsByTagName('script'))
+        .find((item) => /\/habby\.js$/i.test(new URL(item.src || '', window.location.href).pathname || ''));
+
+      if (!scriptTag || !scriptTag.src) return '';
+
+      const scriptUrl = new URL(scriptTag.src, window.location.href);
+      const scriptPath = scriptUrl.pathname.replace(/\/habby\.js$/i, '');
+      const prefix = scriptPath.endsWith('/') ? scriptPath.slice(0, -1) : scriptPath;
+      return `${scriptUrl.origin}${prefix}/api`;
+    } catch {
+      return '';
+    }
+  }
+
   /* ── Configuración ── */
-  const API_URL      = 'https://habby-chatbot.vercel.app/api/chat';
-  const API_BASE     = API_URL.replace(/\/chat$/, '');
+  const DEFAULT_API_BASE = 'https://habby-chatbot.vercel.app/api';
+  const API_BASE     = trimTrailingSlash(window.HABBY_API_BASE || inferApiBaseFromScript() || DEFAULT_API_BASE);
+  const API_URL      = `${API_BASE}/chat`;
   const LEADS_URL    = `${API_BASE}/leads`;
   const AVAIL_URL    = `${API_BASE}/availability`;
   const APPT_URL     = `${API_BASE}/appointments`;

@@ -250,7 +250,20 @@ Coloca este script en el **footer** de WordPress:
 <script src="https://chat.habita.pe/habby.js" defer></script>
 ```
 
+El widget ahora detecta automaticamente su `API_BASE` segun el dominio/ruta del script.
+Ejemplos:
+
+1. `https://chat.habita.pe/habby.js` -> usa `https://chat.habita.pe/api/...`
+2. `https://habita.pe/habby/habby.js` -> usa `https://habita.pe/habby/api/...`
+
 Si mantienes el API en Vercel, reemplaza el dominio por `https://habby-chatbot.vercel.app/habby.js`.
+
+Opcional: puedes forzar otra API en WordPress antes del script:
+
+```html
+<script>window.HABBY_API_BASE='https://habby-chatbot.vercel.app/api';</script>
+<script src="https://habita.pe/habby/habby.js" defer></script>
+```
 
 ---
 
