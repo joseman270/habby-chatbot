@@ -54,6 +54,34 @@ const tests = [
     message: 'tengo dudas y necesito orientacion para decidir mejor',
     expectStructured: true,
   },
+  {
+    name: 'Venta de terreno factible',
+    profile: 'vendedor',
+    message: 'hoy en dia es factible vender mi terreno en san sebastian?',
+    mustIncludeAny: ['terreno', 'san sebastian', 'factible', 'acceso', 'document'],
+    expectStructured: true,
+  },
+];
+
+const dialogueTests = [
+  {
+    name: 'Seguimiento vendedor sin repetir',
+    profile: 'vendedor',
+    steps: [
+      'quiero vender mi terreno en san sebastian',
+      'si porfa',
+    ],
+    secondMustIncludeAny: ['metraje', 'document', 'acceso', 'cargas', 'valuacion'],
+  },
+  {
+    name: 'Seguimiento agente sin repetir',
+    profile: 'agente',
+    steps: [
+      'soy agente y quiero saber comision y beneficios con Habita',
+      'si porfa',
+    ],
+    secondMustIncludeAny: ['caso', 'tipo de inmueble', 'zona', 'marketing', 'drones', 'comision'],
+  },
 ];
 
 function normalizeForSearch(value) {
@@ -75,7 +103,7 @@ function hasUrl(text) {
 function hasStructuredFormat(text) {
   const value = String(text || '');
   const hasBullet = /(^|\n)•\s+/m.test(value);
-  const hasQuestion = /\?\s*$/m.test(value.trim());
+  const hasQuestion = /\?\s*$/.test(value.trim());
   return hasBullet && hasQuestion;
 }
 
@@ -98,6 +126,8 @@ async function buildDetailPropertyTest() {
     mustIncludeAny: ['precio', 'area', 'metros', 'm2', 'm²', 'no especificado'],
     requiresUrl: true,
     allowsDisambiguation: true,
+    expectStructured: true,
+    expectCards: true,
   };
 
   try {
@@ -151,6 +181,27 @@ async function postChat({ profile, message }) {
   return { ok: res.ok, status: res.status, data, raw: text };
 }
 
+async function postChatMessages({ profile, messages }) {
+  const res = await fetch(`${base}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages,
+      profile,
+    }),
+  });
+
+  const text = await res.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    data = { parseError: true, raw: text };
+  }
+
+  return { ok: res.ok, status: res.status, data, raw: text };
+}
+
 async function getStatus() {
   const res = await fetch(`${base}/api/chat`, { method: 'GET' });
   const text = await res.text();
@@ -180,7 +231,7 @@ async function getStatus() {
 
   for (const test of allTests) {
     try {
-      const r = await postChat(test);
+      const r = await postChat({ profile: test.profile, message: test.message });
       const provider = r.data?.provider || 'unknown';
       const reply = String(r.data?.reply || '');
       const replyNormalized = normalizeForSearch(reply);
@@ -210,6 +261,47 @@ async function getStatus() {
         console.log(`     reply=${reply.slice(0, 180) || r.raw.slice(0, 180)}`);
       } else {
         console.log(`OK   ${test.name} -> HTTP ${r.status} | provider=${provider}`);
+      }
+    } catch (err) {
+      failed += 1;
+      console.log(`FAIL ${test.name} -> ERROR ${err.message}`);
+    }
+  }
+
+  for (const test of dialogueTests) {
+    try {
+      const history = [];
+      const replies = [];
+
+      for (const step of test.steps) {
+        history.push({ role: 'user', content: step });
+        const r = await postChatMessages({ profile: test.profile, messages: history });
+        const provider = r.data?.provider || 'unknown';
+        const reply = String(r.data?.reply || '');
+        replies.push(reply);
+
+        if (!r.ok || !reply || reply.trim().length < 20 || provider === 'safe-mode') {
+          throw new Error(`respuesta inválida en paso ${replies.length}`);
+        }
+
+        history.push({ role: 'assistant', content: reply });
+      }
+
+      const firstReply = replies[0] || '';
+      const secondReply = replies[1] || '';
+
+      let caseFailed = false;
+      if (firstReply === secondReply) caseFailed = true;
+      if (!hasStructuredFormat(secondReply)) caseFailed = true;
+      if (test.secondMustIncludeAny && !includesAny(secondReply, test.secondMustIncludeAny)) caseFailed = true;
+
+      if (caseFailed) {
+        failed += 1;
+        console.log(`FAIL ${test.name} -> respuestas repetidas o poco profundas`);
+        console.log(`     step1=${firstReply.slice(0, 180)}`);
+        console.log(`     step2=${secondReply.slice(0, 180)}`);
+      } else {
+        console.log(`OK   ${test.name} -> seguimiento conversacional correcto`);
       }
     } catch (err) {
       failed += 1;

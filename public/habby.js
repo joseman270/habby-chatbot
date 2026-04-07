@@ -23,28 +23,33 @@
   const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.';
   const PROFILE_COPY = {
     comprador: {
-      label: 'Comprador',
-      intro: 'Perfecto. Te ayudaré a encontrar el inmueble ideal con datos reales de nuestro catálogo y opciones visuales claras. ¿Qué estás buscando?',
+      label: 'Quiero comprar una propiedad',
+      userText: 'Quiero comprar una propiedad',
+      intro: 'Perfecto. Te ayudaré a encontrar la propiedad ideal con datos reales, fotos y opciones claras. ¿Qué tipo de inmueble buscas, en qué zona y con qué presupuesto?',
       quick: [
-        'Busco depa para comprar',
+        'Casa',
+        'Departamento',
+        'Terreno',
         'Quiero alquilar un inmueble',
-        '¿Qué propiedades tienen en mi zona?',
-        'Quiero agendar una cita',
+        'Quiero comparar opciones',
+        'Quiero agendar una visita',
       ],
     },
     vendedor: {
-      label: 'Vendedor',
-      intro: 'Excelente. Te cuento cómo Habita puede ayudarte a vender mejor y más rápido con soporte comercial, fotos, video, camaras, drones y difusión. ¿Qué tipo de inmueble deseas vender?',
+      label: 'Quiero vender una propiedad',
+      userText: 'Quiero vender una propiedad',
+      intro: 'Excelente. Te ayudaré a vender mejor y más rápido con soporte comercial, fotos, video, cámaras, drones y difusión. ¿Qué tipo de inmueble deseas vender?',
       quick: [
+        'Quiero vender mi terreno',
         'Quiero vender mi departamento',
         '¿Qué beneficios tengo al vender con Habita?',
-        '¿Cómo usan cámaras, video y drones?',
         'Quiero una llamada de asesor',
       ],
     },
     agente: {
-      label: 'Agente de venta',
-      intro: 'Genial. Si tienes un contacto para vender, podemos colaborar con comision competitiva, soporte integral de marketing, contenido audiovisual, drones, camaras y agenda de citas. ¿Te explico cómo trabajamos?',
+      label: 'Quiero hablar con un asesor / agente de ventas',
+      userText: 'Quiero hablar con un asesor / agente de ventas',
+      intro: 'Genial. Si eres agente o deseas hablar con un asesor, te explico comisión competitiva, soporte comercial, marketing, cámaras, drones y agenda de citas. ¿Te explico cómo trabajamos?',
       quick: [
         'Tengo un inmueble para captar',
         '¿Qué comisión manejan?',
@@ -352,7 +357,7 @@
     if (!PROFILE_COPY[selectedProfile]) return;
 
     profile = selectedProfile;
-    addMsg('usr', `Soy ${PROFILE_COPY[selectedProfile].label}.`);
+    addMsg('usr', PROFILE_COPY[selectedProfile].userText || PROFILE_COPY[selectedProfile].label);
     addMsg('bot', PROFILE_COPY[selectedProfile].intro, true);
     inp.disabled = false;
     inp.focus();
@@ -560,10 +565,10 @@
     inp.disabled = true;
     inp.value = '';
     resize();
-    addChoices(`${WELCOME}\n\nSelecciona tu perfil para comenzar:`, [
-      { label: 'Comprador', onClick: () => setProfile('comprador') },
-      { label: 'Vendedor', onClick: () => setProfile('vendedor') },
-      { label: 'Agente de venta', onClick: () => setProfile('agente') },
+    addChoices(`${WELCOME}\n\nSelecciona tu ruta para comenzar:`, [
+      { label: PROFILE_COPY.comprador.label, onClick: () => setProfile('comprador') },
+      { label: PROFILE_COPY.vendedor.label, onClick: () => setProfile('vendedor') },
+      { label: PROFILE_COPY.agente.label, onClick: () => setProfile('agente') },
     ]);
   }
 
@@ -659,10 +664,10 @@
 
   /* ── Inicio ── */
   inp.disabled = true;
-  addChoices(`${WELCOME}\n\nSelecciona tu perfil para comenzar:`, [
-    { label: 'Comprador', onClick: () => setProfile('comprador') },
-    { label: 'Vendedor', onClick: () => setProfile('vendedor') },
-    { label: 'Agente de venta', onClick: () => setProfile('agente') },
+  addChoices(`${WELCOME}\n\nSelecciona tu ruta para comenzar:`, [
+    { label: PROFILE_COPY.comprador.label, onClick: () => setProfile('comprador') },
+    { label: PROFILE_COPY.vendedor.label, onClick: () => setProfile('vendedor') },
+    { label: PROFILE_COPY.agente.label, onClick: () => setProfile('agente') },
   ]);
   setTimeout(() => { if (!open) badge.style.display = 'flex'; }, 4000);
 

@@ -90,6 +90,17 @@ function getLastUserMessage(messages) {
   return '';
 }
 
+function getLastAssistantMessage(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i] || {};
+    const role = String(item.role || '').toLowerCase();
+    if (role === 'assistant') {
+      return String(item.content || '').trim();
+    }
+  }
+  return '';
+}
+
 function normalizeForSearch(value) {
   return String(value || '')
     .toLowerCase()
@@ -337,6 +348,96 @@ function normalizeReplyPresentation({ reply, intent, waUrl }) {
   });
 }
 
+function isShortAffirmation(text) {
+  const t = normalizeForSearch(text);
+  return /^(si|sí|sii+|si porfa|si claro|claro|dale|ok|okay|listo|perfecto|va|de acuerdo|porfa|por favor|dale pues)$/.test(t)
+    || (t.length <= 14 && /(si|sí|claro|dale|ok|listo|perfecto|va)/.test(t));
+}
+
+function looksLikeSellerFeasibilityQuery(text) {
+  const t = normalizeForSearch(text);
+  return /(factible|conviene|se puede vender|puedo vender|vale la pena|vender|venta|tasar|valuar|avaluar|valorar)/.test(t)
+    && /(terreno|lote|casa|departamento|inmueble|propiedad)/.test(t);
+}
+
+function buildSellerEvaluationReply({ text, waUrl }) {
+  const raw = String(text || '');
+  const location = /san sebasti[aá]n/i.test(raw) ? 'San Sebastián' : 'tu zona';
+
+  return buildStructuredReply({
+    title: `Sí, puede ser factible vender tu terreno en ${location}`,
+    bullets: [
+      'Para evaluarlo bien revisamos ubicación exacta, metraje y acceso a vías principales.',
+      'También confirmamos si está inscrito, libre de cargas/gravámenes y con documentos al día.',
+      'Si cuenta con fotos, video, cámaras y drones, podemos presentarlo mejor y generar más interés.',
+      'La demanda y el precio final dependen del entorno, uso permitido y estrategia comercial.',
+      `Si deseas, te acompaño con una prevaluación y lo conecto con asesor: ${waUrl}`,
+    ],
+    question: '¿Me compartes el metraje, la ubicación exacta y si está inscrito?',
+  });
+}
+
+function buildSellerFollowUpReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Perfecto, vayamos a tu caso de venta',
+    bullets: [
+      'Revisamos ubicación, metraje, estado de documentos y precio esperado.',
+      'Te ayudamos con fotos, video, cámaras, drones y difusión comercial.',
+      'Con eso te decimos el siguiente paso para salir al mercado con más fuerza.',
+      `Contacto directo por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Me compartes los datos clave del inmueble para evaluarlo?',
+  });
+}
+
+function buildAgentFollowUpReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Perfecto, revisemos tu caso como agente',
+    bullets: [
+      'La comisión es competitiva y se confirma según el caso; no inventamos porcentajes fijos.',
+      'El valor para ti está en el soporte comercial, publicidad, marketing, cámaras y drones.',
+      'También damos seguimiento, filtro de interesados y apoyo en agenda para cerrar mejor.',
+      `Podemos revisarlo por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Me compartes el tipo de inmueble y la zona para orientarte?',
+  });
+}
+
+function buildBuyerFollowUpReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Perfecto, afinemos la búsqueda para ti',
+    bullets: [
+      'Dime si buscas casa, departamento, terreno o local.',
+      'Indícame zona, presupuesto y si es para vivir o invertir.',
+      'Con eso te muestro opciones más precisas, con fotos y ubicación.',
+      `Si quieres, también coordinamos por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Qué tipo de propiedad buscas y en qué zona?',
+  });
+}
+
+function buildContextualContinuationReply({ profile, lastAssistant, lastUser, waUrl }) {
+  const assistantText = normalizeForSearch(lastAssistant);
+  const userText = normalizeForSearch(lastUser);
+
+  if (profile === 'vendedor') {
+    if (looksLikeSellerFeasibilityQuery(userText) || /(venta|vender|terreno|lote|document|carga|gravamen|san sebastian|san sebasti[aá]n)/.test(`${assistantText} ${userText}`)) {
+      return buildSellerEvaluationReply({ text: lastUser, waUrl });
+    }
+    return buildSellerFollowUpReply({ waUrl });
+  }
+
+  if (profile === 'agente') {
+    return buildAgentFollowUpReply({ waUrl });
+  }
+
+  if (profile === 'comprador') {
+    return buildBuyerFollowUpReply({ waUrl });
+  }
+
+  return null;
+}
+
 function buildSellerValueReply({ waUrl }) {
   return buildStructuredReply({
     title: 'Vender con Habita te da más alcance y mejor presentación',
@@ -537,9 +638,10 @@ function looksLikeOwnerPropertyDescription(text) {
   return hasPropertyWord && hasMetricOrAmount;
 }
 
-function buildRuleBasedReply({ text, profile, waUrl, properties }) {
+function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForSearch(text || '');
+  const lastAssistant = getLastAssistantMessage(messages);
 
   if (!t) return null;
 
@@ -578,6 +680,23 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
       ],
       question: '¿Te parece si empezamos ahora?',
     });
+  }
+
+  if (isShortAffirmation(t)) {
+    const continuationReply = buildContextualContinuationReply({
+      profile,
+      lastAssistant,
+      lastUser: text,
+      waUrl,
+    });
+
+    if (continuationReply) {
+      return continuationReply;
+    }
+  }
+
+  if (profile === 'vendedor' && looksLikeSellerFeasibilityQuery(normalized)) {
+    return buildSellerEvaluationReply({ text, waUrl });
   }
 
   if (profile === 'vendedor' && /(vender|venta|tasar|valorar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble)/.test(normalized)) {
@@ -740,6 +859,7 @@ module.exports = async (req, res) => {
     profile: normalizedProfile,
     waUrl,
     properties,
+    messages,
   });
 
   if (ruleReply) {
