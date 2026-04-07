@@ -55,6 +55,13 @@ const tests = [
     expectStructured: true,
   },
   {
+    name: 'Fuera de inmobiliaria redirige',
+    profile: 'comprador',
+    message: 'cuentame un chiste de futbol',
+    mustIncludeAny: ['temas inmobiliarios', 'comprar', 'alquilar', 'vender'],
+    expectStructured: true,
+  },
+  {
     name: 'Comparativa casa vs departamento',
     profile: 'vendedor',
     message: 'que es mejor comprar una casa o un departamento?',
