@@ -375,6 +375,73 @@ function parsePriceNumberFromProperty(property) {
   return Number.isFinite(num) ? num : null;
 }
 
+function isYearPeakSalesQuery(text) {
+  const t = normalizeForSearch(text);
+  const asksYear = /(en que ano|en que año|que ano|que año|anio|año)/.test(t);
+  const asksSales = /(vendieron|se vendio|se vendieron|ventas|cierres|vendidas|vendidos)/.test(t);
+  return asksYear && asksSales;
+}
+
+function statusLooksLikeSold(status) {
+  const normalized = normalizeForSearch(status);
+  return /(vendid|sold|cerrad|transferid|adjudicad|escriturad)/.test(normalized);
+}
+
+function extractYearFromProperty(property) {
+  const candidates = [
+    property?.soldAt,
+    property?.closedAt,
+    property?.publishedAt,
+    property?.publishedAtGmt,
+    property?.modifiedAt,
+    property?.modifiedAtGmt,
+  ];
+
+  for (const value of candidates) {
+    const raw = String(value || '').trim();
+    if (!raw) continue;
+    const match = raw.match(/\b(19|20)\d{2}\b/);
+    if (!match) continue;
+    const year = Number(match[0]);
+    if (Number.isFinite(year) && year >= 1990 && year <= 2100) {
+      return year;
+    }
+  }
+
+  return null;
+}
+
+function buildYearCountMap(properties, { soldOnly = false } = {}) {
+  const map = new Map();
+
+  (properties || []).forEach((property) => {
+    if (soldOnly && !statusLooksLikeSold(property?.status)) return;
+    const year = extractYearFromProperty(property);
+    if (!year) return;
+    map.set(year, (map.get(year) || 0) + 1);
+  });
+
+  return map;
+}
+
+function pickTopYearStat(yearMap) {
+  if (!yearMap || yearMap.size === 0) return null;
+
+  return [...yearMap.entries()]
+    .map(([year, count]) => ({ year, count }))
+    .sort((a, b) => b.count - a.count || b.year - a.year)[0];
+}
+
+function formatYearDistribution(yearMap, limit = 4) {
+  if (!yearMap || yearMap.size === 0) return '';
+
+  return [...yearMap.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .slice(0, limit)
+    .map(([year, count]) => `${year}: ${count}`)
+    .join(' | ');
+}
+
 function inferCityFromQuery(text, properties = []) {
   const t = normalizeForSearch(text);
   if (t.includes('cusco')) return 'Cusco';
@@ -394,6 +461,7 @@ function inferCityFromQuery(text, properties = []) {
 
 function buildMarketAnalysisReply({ text, properties, waUrl }) {
   const query = String(text || '');
+  const normalizedQuery = normalizeForSearch(query);
   const operation = detectOperation(query);
   const preferredType = detectPropertyTypePreference(query);
   const city = inferCityFromQuery(query, properties);
@@ -417,6 +485,34 @@ function buildMarketAnalysisReply({ text, properties, waUrl }) {
   const cityLabel = city || 'la zona consultada';
   const propertyLabel = preferredType || 'inmuebles';
   const qty = source.length;
+  const asksYearPeakSales = isYearPeakSalesQuery(normalizedQuery);
+
+  const soldYearMap = buildYearCountMap(source, { soldOnly: true });
+  const publishedYearMap = buildYearCountMap(source, { soldOnly: false });
+  const topSoldYear = pickTopYearStat(soldYearMap);
+  const topPublishedYear = pickTopYearStat(publishedYearMap);
+
+  let yearResultLine = 'No encontré suficientes fechas en el catálogo para calcular un año pico de forma confiable.';
+  let yearContextLine = '';
+  let yearDistributionLine = '';
+
+  if (topSoldYear) {
+    yearResultLine = `Resultado real con datos de Habita: el año con más cierres marcados como vendidos es ${topSoldYear.year} (${topSoldYear.count} propiedades).`;
+    const soldDistribution = formatYearDistribution(soldYearMap, 5);
+    if (soldDistribution) {
+      yearDistributionLine = `Distribución de cierres por año: ${soldDistribution}.`;
+    }
+  } else if (topPublishedYear) {
+    yearResultLine = `Resultado real con datos de Habita: el año con mayor actividad de publicaciones en ${cityLabel} es ${topPublishedYear.year} (${topPublishedYear.count} inmuebles).`;
+    const publicationDistribution = formatYearDistribution(publishedYearMap, 5);
+    if (publicationDistribution) {
+      yearDistributionLine = `Distribución de publicaciones por año: ${publicationDistribution}.`;
+    }
+
+    if (asksYearPeakSales) {
+      yearContextLine = 'En el catálogo actual no hay registros explícitos de estado vendido/cerrado por año; por eso uso publicaciones como proxy objetivo.';
+    }
+  }
 
   let priceLine = 'No tengo suficiente detalle de precios para calcular un promedio confiable ahora mismo.';
   if (prices.length) {
@@ -429,13 +525,15 @@ function buildMarketAnalysisReply({ text, properties, waUrl }) {
   return buildStructuredReply({
     title: `Análisis inmobiliario para ${propertyLabel} en ${cityLabel}`,
     bullets: [
-      'Para responder exactamente qué año se vendieron más propiedades se requiere histórico de cierres (no solo catálogo activo).',
+      yearResultLine,
+      yearContextLine,
+      yearDistributionLine,
       `Con la data disponible de Habita, hoy veo ${qty} opciones relevantes para tu consulta.`,
       priceLine,
-      'Si quieres precisión por año, te ayudo a estructurar un reporte con fuentes registrales + tu data comercial.',
+      'Si quieres, complemento este análisis con fuentes externas oficiales (SUNARP/INEI) para validar tendencia de mercado.',
       `También podemos revisarlo con un asesor aquí: ${waUrl}`,
     ],
-    question: '¿Quieres que te arme un comparativo por año y tipo de inmueble en Cusco?',
+    question: '¿Quieres que te lo desagregue por tipo de inmueble (casa, depa y terreno) en Cusco?',
   });
 }
 

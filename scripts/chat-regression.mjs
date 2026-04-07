@@ -65,8 +65,12 @@ const tests = [
     name: 'Analítica ventas por año Cusco',
     profile: 'vendedor',
     message: 'en que año se vendieron mas casas en cusco?',
-    mustIncludeAny: ['ano', 'año', 'historico', 'cusco', 'catalogo', 'reporte'],
-    mustNotIncludeAny: ['vender con habita te da mas alcance y mejor presentacion'],
+    mustIncludeAny: ['ano', 'año', 'cusco', 'resultado real', 'publicaciones'],
+    mustNotIncludeAny: [
+      'vender con habita te da mas alcance y mejor presentacion',
+      'para responder exactamente que año se vendieron más propiedades se requiere histórico de cierres',
+    ],
+    expectYearValue: true,
     expectStructured: true,
   },
 ];
@@ -113,6 +117,10 @@ function hasStructuredFormat(text) {
   const hasBullet = /(^|\n)•\s+/m.test(value);
   const hasQuestion = /\?\s*$/.test(value.trim());
   return hasBullet && hasQuestion;
+}
+
+function hasYearValue(text) {
+  return /\b(19|20)\d{2}\b/.test(String(text || ''));
 }
 
 async function fetchProperties() {
@@ -253,6 +261,7 @@ async function getStatus() {
       if (test.mustNotIncludeAny && includesAny(reply, test.mustNotIncludeAny)) caseFailed = true;
       if (test.shouldMentionAny && test.shouldMentionAny.length > 0 && !includesAny(reply, test.shouldMentionAny)) caseFailed = true;
       if (test.expectStructured && !hasStructuredFormat(reply)) caseFailed = true;
+      if (test.expectYearValue && !hasYearValue(reply)) caseFailed = true;
       if (test.requiresUrl && !hasUrl(reply)) {
         const isDisambiguation = test.allowsDisambiguation
           && /(varias propiedades parecidas|indica el numero|nombre exacto)/.test(replyNormalized);
