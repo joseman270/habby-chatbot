@@ -650,28 +650,30 @@ function buildSellerEvaluationReply({ text, waUrl }) {
   const location = /san sebasti[aá]n/i.test(raw) ? 'San Sebastián' : 'tu zona';
 
   return buildStructuredReply({
-    title: `Sí, puede ser factible vender tu terreno en ${location}`,
+    title: '¡Excelente! Podemos ayudarte a vender tu terreno.',
     bullets: [
-      'Para evaluarlo bien revisamos ubicación exacta, metraje y acceso a vías principales.',
-      'También confirmamos si está inscrito, libre de cargas/gravámenes y con documentos al día.',
-      'Si cuenta con fotos, video, cámaras y drones, podemos presentarlo mejor y generar más interés.',
-      'La demanda y el precio final dependen del entorno, uso permitido y estrategia comercial.',
-      `Si deseas, te acompaño con una prevaluación y lo conecto con asesor: ${waUrl}`,
+      '1️⃣ Ubicación exacta - ¿En qué distrito/zona está?',
+      '2️⃣ Metraje - ¿Cuántos m² tiene el terreno?',
+      '3️⃣ Inscripción - ¿Está inscrito en registros públicos?',
+      '',
+      'Con esos datos podré estimar rango de precio, evaluar documentación necesaria y conectarte con asesor para prevaluación gratis.',
     ],
-    question: '¿Me compartes el metraje, la ubicación exacta y si está inscrito?',
+    question: '¿Comienzas compartiendo la ubicación?',
   });
 }
 
 function buildSellerFollowUpReply({ waUrl }) {
   return buildStructuredReply({
-    title: 'Perfecto, vayamos a tu caso de venta',
+    title: 'Perfecto, vayamos a tu caso de venta paso a paso',
     bullets: [
-      'Revisamos ubicación, metraje, estado de documentos y precio esperado.',
-      'Te ayudamos con fotos, video, cámaras, drones y difusión comercial.',
-      'Con eso te decimos el siguiente paso para salir al mercado con más fuerza.',
-      `Contacto directo por WhatsApp: ${waUrl}`,
+      '📋 Primero confirmo: tipo de inmueble, ubicación exacta, metraje y precio esperado.',
+      '✅ Luego evaluamos documentación: inscripción, gravámenes y estado legal.',
+      '📸 Produzco fotos, video y fotos con drones si aplica.',
+      '📣 Difundo en canales adecuados para generar interesados calificados.',
+      '🎯 Filtro leads y apoyo en visitas hasta cerrar la venta.',
+      `📞 Vamos paso a paso: ${waUrl}`,
     ],
-    question: '¿Me compartes los datos clave del inmueble para evaluarlo?',
+    question: '¿Comenzamos con el tipo de propiedad que quieres vender?',
   });
 }
 
@@ -725,16 +727,16 @@ function buildContextualContinuationReply({ profile, lastAssistant, lastUser, wa
 
 function buildSellerValueReply({ waUrl }) {
   return buildStructuredReply({
-    title: 'Vender con Habita te da más alcance y mejor presentación',
+    title: 'Vender con Habita acelera tu cierre y obtiene mejor precio',
     bullets: [
-      '📸 Producción de fotos y video profesional para mostrar mejor tu inmueble.',
-      '🚁 Tomas con drones cuando la propiedad lo amerita para destacar ubicación y entorno.',
-      '📣 Difusión digital y marketing en canales adecuados para generar más interesados.',
-      '🧾 Valuación comercial para ayudarte a fijar un precio competitivo.',
-      '👀 Filtro de leads y visitas calificadas para no perder tiempo con curiosos.',
-      `📲 Si quieres, coordinamos por WhatsApp: ${waUrl}`,
+      '📸 Fotos y video profesional para destacar tu inmueble vs competencia.',
+      '🚁 Drones para mostrar ubicación, entorno y acceso a vías principales.',
+      '📣 Difusión digital estratégica en el público correcto.',
+      '💰 Valuación comercial para establecer precio competitivo.',
+      '👥 Filtro de interesados serios (sin curiosos que pierden tu tiempo).',
+      '📞 Apoyo en toda la negociación hasta el cierre.',
     ],
-    question: '¿Quieres que te explique el proceso paso a paso para vender tu inmueble?',
+    question: '¿Quieres que te explique el proceso completo para vender tu inmueble?',
   });
 }
 
