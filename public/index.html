@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Habby - Asesor Virtual</title>
+    <!-- Importar fuente moderna -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* 
+        🎨 DISEÑO RESPONSIVE Y ANIMACIONES (MODO APP)
+        Paleta Corporativa: Habita (Azul Oscuro y Verde Brillante)
+        */
+
+        :root {
+            --habita-blue: #1E3A8A; /* Azul Corporativo */
+            --habita-blue-light: #2563EB;
+            --habita-green: #11b965; /* Verde Corporativo */
+            --habita-green-light: #10B981;
+            --bg-light: #f8f9fa;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            /* Fondo con gradiente sutil alineado a la marca */
+            background: linear-gradient(135deg, #1d3f8d 0%, #83f0ad 100%);
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+        }
+
+        /* Ocultar el botón flotante iniciador de la versión widget */
+        #hb-btn { display: none !important; }
+
+        /* Ocultar el botón de cerrar en la cabecera */
+        #hb-cls { display: none !important; }
+
+        /* 
+        ✅ CONTENEDOR PRINCIPAL DEL CHAT
+        */
+        #hb-box {
+            position: relative !important;
+            top: auto !important;
+            left: auto !important;
+            right: auto !important;
+            bottom: auto !important;
+            
+            width: min(94vw, 1120px) !important;
+            height: min(90dvh, 820px) !important;
+            max-width: none !important;
+            max-height: none !important;
+            
+            background: #ffffff !important;
+            border-radius: 24px !important;
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0,0,0,0.05) !important;
+            
+            opacity: 0 !important;
+            transform: translateY(40px) scale(0.95) !important;
+            pointer-events: all !important;
+            
+            /* Animación de entrada suave */
+            transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), transform 0.6s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+
+        #hb-box.hb-open {
+            opacity: 1 !important;
+            transform: translateY(0) scale(1) !important;
+        }
+
+        /* 
+        🎩 CABECERA (HEADER) - Degradado Habita
+        */
+        #hb-head {
+            padding: 20px 24px !important;
+            /* Degradado de Azul a Verde */
+            background: linear-gradient(135deg, var(--habita-blue) 0%, var(--habita-green) 100%) !important;
+            border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+        }
+        
+        #hb-av {
+            width: 44px !important;
+            height: 44px !important;
+            font-size: 0!important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important;
+            background: #ffffff  url("Iso-Habita-Peru.png") no-repeat center center !important; /* Avatar en blanco para resaltar el emoji/logo */
+            background-size: 70% !important;
+            color: transparent !important;
+            
+        }
+
+        .hb-hinfo strong {
+            font-size: 1.15rem !important;
+            letter-spacing: -0.3px;
+            color: #ffffff !important;
+        }
+        
+        .hb-status {
+            font-size: 0.85rem !important;
+            margin-top: 2px;
+            color: rgba(255, 255, 255, 0.85) !important;
+        }
+
+        /* 
+        💬 BURBUJAS DE MENSAJE Y ANIMACIONES
+        */
+        #hb-msgs {
+            padding: 24px 20px !important;
+            background: var(--bg-light) !important;
+            scroll-behavior: smooth !important;
+            overflow-y: auto !important;
+            max-height: calc(100% - 160px) !important;
+        }
+
+        /* Estilizando la barra de scroll para un look más "App" */
+        #hb-msgs::-webkit-scrollbar {
+            width: 6px;
+        }
+        #hb-msgs::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        #hb-msgs::-webkit-scrollbar-thumb {
+            background: rgba(30, 58, 138, 0.15);
+            border-radius: 10px;
+        }
+
+        /* Animación para cuando aparece un nuevo mensaje */
+        @keyframes popIn {
+            0% { opacity: 0; transform: translateY(15px) scale(0.95); }
+            100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .hb-msg {
+            animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+        }
+
+        .hb-bbl {
+            font-size: 0.95rem !important;
+            line-height: 1.6 !important;
+            padding: 12px 18px !important;
+            border-radius: 18px !important;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.03) !important;
+            position: relative;
+        }
+
+        /* Mensaje del bot */
+        .bot .hb-bbl {
+            background: #ffffff !important;
+            color: #334155 !important;
+            border-bottom-left-radius: 4px !important;
+            border: 1px solid rgba(0, 0, 0, 0.04) !important;
+        }
+
+        /* Mensaje del usuario (Verde Habita) */
+        .usr .hb-bbl {
+            background: linear-gradient(135deg, var(--habita-green) 0%, var(--habita-green-light) 100%) !important;
+            border-bottom-right-radius: 4px !important;
+            color: #ffffff !important;
+            box-shadow: 0 4px 12px rgba(0, 184, 92, 0.25) !important;
+        }
+
+        /* Botones de sugerencias (Quick Replies) */
+        .hb-qr {
+            padding: 10px 18px !important;
+            border-radius: 100px !important;
+            font-size: 0.9rem !important;
+            font-weight: 500 !important;
+            color: var(--habita-blue) !important;
+            border: 1px solid rgba(30, 58, 138, 0.15) !important;
+            background: #ffffff !important;
+            box-shadow: 0 2px 4px rgba(30, 58, 138, 0.04) !important;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        
+        .hb-qr:hover {
+            transform: translateY(-2px) !important;
+            background: var(--habita-blue) !important;
+            color: #ffffff !important;
+            border-color: var(--habita-blue) !important;
+            box-shadow: 0 6px 12px rgba(30, 58, 138, 0.2) !important;
+        }
+
+        /* 
+           ⌨️ ÁREA DE TEXTO Y BOTÓN ENVIAR
+        */
+        #hb-inp-area {
+            padding: 16px 20px !important;
+            background: #ffffff !important;
+            border-top: 1px solid #f1f5f9 !important;
+        }
+
+        #hb-inp {
+            padding: 14px 16px !important;
+            font-size: 0.95rem !important;
+            border-radius: 16px !important;
+            background: var(--bg-light) !important;
+            border: 1px solid #e2e8f0 !important;
+            transition: all 0.2s ease !important;
+        }
+
+        #hb-inp:focus {
+            background: #ffffff !important;
+            border-color: var(--habita-green) !important;
+            box-shadow: 0 0 0 4px rgba(0, 184, 92, 0.1) !important;
+        }
+
+        #hb-send {
+            width: 48px !important;
+            height: 48px !important;
+            border-radius: 14px !important;
+            background: var(--habita-blue) !important; /* Azul predeterminado */
+            box-shadow: 0 4px 10px rgba(30, 58, 138, 0.2) !important;
+            transition: all 0.3s ease !important;
+        }
+
+        #hb-send:hover {
+            background: var(--habita-green) !important; /* Cambia a verde al pasar el mouse */
+            transform: scale(1.05) rotate(-5deg) !important;
+            box-shadow: 0 6px 14px rgba(0, 184, 92, 0.3) !important;
+        }
+
+        #hb-send svg {
+            width: 20px !important;
+            height: 20px !important;
+            fill: #ffffff !important;
+        }
+
+        /* 
+           📱 RESPONSIVE PANTALLA COMPLETA EN MÓVIL
+        */
+        @media(max-width: 650px) {
+            #hb-box {
+                max-width: 100vw !important;
+                max-height: 100dvh !important;
+                height: 100dvh !important;
+                width: 100vw !important;
+                border-radius: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            body {
+                background: #ffffff;
+            }
+        }
+
+        @media (min-width: 651px) and (max-width: 1024px) {
+            #hb-box {
+                width: min(95vw, 980px) !important;
+                height: min(90dvh, 760px) !important;
+                border-radius: 20px !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Script de Habby (producción) -->
+    <script src="/habby.js"></script>
+    <script>
+        // Animación de inicialización y despliegue
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const btn = document.getElementById('hb-btn');
+                const box = document.getElementById('hb-box');
+                
+                if(btn && btn.getAttribute('aria-expanded') === 'false') {
+                    btn.click();
+                }
+            }, 300); // Retraso estilizado para que se vea la animación
+        });
+    </script>
+</body>
+</html>
