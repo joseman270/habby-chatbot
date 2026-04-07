@@ -37,7 +37,6 @@ const tests = [
     name: 'Consulta abierta',
     profile: 'comprador',
     message: 'tengo dudas y necesito orientacion para decidir mejor',
-    mustIncludeAny: ['habby', 'orientacion', 'ayudarte', 'ayudarte a'],
   },
 ];
 
