@@ -440,6 +440,12 @@ function looksLikeSellerFeasibilityQuery(text) {
     && /(terreno|lote|casa|departamento|inmueble|propiedad)/.test(t);
 }
 
+function isSellerGeneralIntent(text) {
+  const t = normalizeForSearch(text);
+  return /(vender|venta|tasar|valorar|avaluar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble|terreno|lote|casa|departamento|depa|dpto|inmueble|propiedad)/.test(t);
+}
+
+
 function isMarketAnalysisQuery(text) {
   const t = normalizeForSearch(text);
   const hasMarketSignal = /(en que ano|en que año|que ano|que año|anio|año|historico|histórico|tendencia|mercado|vendieron|ventas|se vendio|se vendieron|demanda|precio promedio)/.test(t);
@@ -1154,7 +1160,7 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
     return buildSellerEvaluationReply({ text, waUrl });
   }
 
-  if (profile === 'vendedor' && /(vender|venta|tasar|valorar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble)/.test(normalized)) {
+  if (profile === 'vendedor' && RULES_ONLY_MODE && isSellerGeneralIntent(normalized)) {
     return buildSellerValueReply({ waUrl });
   }
 
@@ -1208,7 +1214,7 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
   if (propertyReply) return propertyReply;
 
   if (profile === 'vendedor') {
-    return buildSellerValueReply({ waUrl });
+    return RULES_ONLY_MODE ? buildSellerValueReply({ waUrl }) : null;
   }
 
   if (profile === 'agente') {

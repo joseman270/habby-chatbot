@@ -79,17 +79,22 @@ async function testSellerValueProposition() {
   const { reply } = response;
   console.log('Response:', reply);
 
-  // Validation: Clear benefits with emojis
-  assert(reply.includes('📸'), 'Has photo icon');
-  assert(reply.includes('📣'), 'Has promotion icon');
-  assert(reply.includes('💰'), 'Has price icon');
-  assert(reply.includes('👥'), 'Has people/leads icon');
+  const bulletMatches = reply.match(/(^|\n)•\s+/g) || [];
+  const endsWithQuestion = reply.trim().endsWith('?');
+  const benefitSignals = [
+    /foto|video/i,
+    /dron/i,
+    /difusi|publicidad|marketing/i,
+    /valuaci|precio/i,
+    /filtro|interesad|lead/i,
+    /negociaci|cierre/i,
+  ];
+  const matchedBenefits = benefitSignals.filter((regex) => regex.test(reply)).length;
 
-  // Validation: Mentions key benefits
-  assert(reply.includes('profesional'), 'Mentions professional photos/video');
-  assert(reply.includes('Drones') || reply.includes('drones'), 'Mentions drone photography');
-  assert(reply.includes('precio'), 'Mentions competitive pricing');
-  assert(reply.includes('Filtro') || reply.includes('filtro'), 'Mentions qualified leads');
+  // Validation: Structured and benefits present (IA o reglas)
+  assert(bulletMatches.length >= 2, 'Includes at least two bullets');
+  assert(endsWithQuestion, 'Ends with a closing question');
+  assert(matchedBenefits >= 2, 'Mentions at least two seller benefits');
 
   // Validation: No dead WhatsApp links
   assert(!reply.includes('${waUrl}'), 'No template variable leakage');
