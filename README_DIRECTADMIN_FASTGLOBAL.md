@@ -1,4 +1,4 @@
-# Despliegue en DirectAdmin (FastGlobal)
+# Despliegue en DirectAdmin (FastGlobal) - Visualizacion Completa
 
 Guia operativa para publicar Habby en `https://habita.pe/habby` con Node.js en DirectAdmin.
 
@@ -7,21 +7,31 @@ Guia operativa para publicar Habby en `https://habita.pe/habby` con Node.js en D
 En `Create Web Application` usa:
 
 - Node.js version: `20.x`
-- Application mode: `Production`
+- Application mode: `Production` (no `Development`)
 - Application root: `/home/gqocw4j3nsf9/domains/habita.pe/public_html/habby`
-- Application URL: `https://habita.pe/habby`
+- Application URL: `/habby` (solo la ruta; el dominio ya se selecciona en el combo de la izquierda)
 - Startup file: `index.js`
 
-## 2) Archivos obligatorios en la carpeta `/habby`
+## 2) Que subir exactamente a la carpeta `/habby`
 
-Deben existir:
+En la raiz de `/habby` deben existir:
 
 - `package.json`
+- `package-lock.json`
 - `index.js`
+- `chat-completo.html` (pantalla completa sin widget)
 - carpeta `api/`
 - carpeta `public/`
 
+No subir:
+
+- `node_modules/`
+- `.git/`
+- archivo `.env` con secretos
+
 ## 3) Subida recomendada por Git + SSH
+
+Este bloque funciona bien si `habby` no existe o si `habby` ya es un repo Git.
 
 ```bash
 cd /home/gqocw4j3nsf9/domains/habita.pe/public_html
@@ -36,7 +46,29 @@ git pull origin main
 npm ci --omit=dev
 ```
 
-Luego reinicia la app desde DirectAdmin.
+Si `habby` ya existe pero NO tiene `.git` (por ejemplo, subida manual por ZIP/FTP), no uses `git clone` dentro de esa carpeta. En ese caso:
+
+1. Copia/sube los archivos del proyecto a `/public_html/habby`.
+2. Ejecuta `npm ci --omit=dev` dentro de `/public_html/habby`.
+3. Reinicia la app desde DirectAdmin.
+
+Si aparece este error al clonar:
+
+fatal: destination path 'habby' already exists and is not an empty directory.
+
+usa este flujo seguro (crea respaldo y vuelve a clonar limpio):
+
+```bash
+cd /home/gqocw4j3nsf9/domains/habita.pe/public_html
+mv habby habby_backup_$(date +%Y%m%d_%H%M%S)
+git clone https://github.com/joseman270/habby-chatbot.git habby
+cd habby
+git checkout main
+git pull origin main
+npm ci --omit=dev
+```
+
+Luego reinicia la app desde DirectAdmin (`Restart App`).
 
 ## 4) Variables de entorno minimas (sin Ollama)
 
@@ -90,19 +122,56 @@ LOCAL_TZ_OFFSET_MINUTES=-300
 ## 5) Verificacion despues del restart
 
 ```bash
-curl -sS https://habita.pe/habby/api/health
+curl -I https://habita.pe/habby/chat-completo.html
+curl -I https://habita.pe/habby/public/habby.js
+curl -I https://habita.pe/habby/api/health
 curl -sS https://habita.pe/habby/api/chat
 ```
 
-## 6) Insercion en WordPress
+Resultado esperado:
 
-En footer (o bloque HTML global):
+- `chat-completo.html` responde `200`
+- `public/habby.js` responde `200`
+- `/api/health` responde `200` con JSON
+- `/api/chat` devuelve JSON
+
+Si `/api/health` devuelve `404` con cabeceras de WordPress, la app Node no esta montada en `/habby` (revisar Application URL, crear/recrear app y reiniciar).
+
+## 6) Publicacion en WordPress (sin widget)
+
+Para visualizacion completa, usa una pagina que abra esta URL:
+
+- `https://habita.pe/habby/chat-completo.html`
+
+Opciones recomendadas:
+
+1. Menu o boton directo a esa URL.
+2. Pagina de WordPress con `iframe` a pantalla completa.
+3. Redireccion desde una pagina interna (ejemplo: `/asesor-virtual`).
+
+Nota: `chat-completo.html` ya configura `window.HABBY_API_BASE` a `https://habita.pe/habby/api` cuando detecta que esta en `/habby`, para evitar rutas equivocadas en produccion.
+
+Ejemplo de `iframe`:
 
 ```html
-<script src="https://habita.pe/habby/habby.js" defer></script>
+<iframe
+  src="https://habita.pe/habby/chat-completo.html"
+  style="width:100%;min-height:85vh;border:0;border-radius:12px;"
+  loading="lazy"
+  referrerpolicy="strict-origin-when-cross-origin"
+></iframe>
 ```
 
-## 7) Nota importante del widget
+## 7) Checklist rapido (modo visualizacion completa)
+
+1. Crear app Node con `Production`, root en `/public_html/habby`, URL `/habby`, startup `index.js`.
+2. Subir proyecto completo a `/public_html/habby` (sin `node_modules`, sin `.git`, sin `.env`).
+3. Ejecutar `npm ci --omit=dev` dentro de `/habby`.
+4. Cargar variables de entorno y hacer `Restart App`.
+5. Confirmar `200` en `chat-completo.html`, `public/habby.js`, `/api/health` y JSON en `/api/chat`.
+6. En WordPress, enlazar o embeber `https://habita.pe/habby/chat-completo.html`.
+
+## 8) Opcional: widget (solo si lo reactivas)
 
 El widget detecta automaticamente el `API_BASE` segun su URL:
 
@@ -116,7 +185,7 @@ Si quieres forzar API manualmente:
 <script src="https://habita.pe/habby/habby.js" defer></script>
 ```
 
-## 8) Solucion al error: "problema de conexion"
+## 9) Solucion al error: "problema de conexion"
 
 Si aparece:
 
@@ -125,9 +194,24 @@ Si aparece:
 revisa en este orden:
 
 1. App Node realmente iniciada en DirectAdmin (Restart App).
-2. `https://habita.pe/habby/api/chat` responde JSON.
-3. `CORS_ALLOW_ORIGINS` incluye `https://habita.pe` y `https://www.habita.pe`.
-4. Variables de Supabase y Gemini/Groq correctamente guardadas.
-5. Ejecutar de nuevo `npm ci --omit=dev` y reiniciar.
+2. En Create Application: `Application mode=Production` y `Application URL=/habby`.
+3. `https://habita.pe/habby/api/chat` responde JSON.
+4. `CORS_ALLOW_ORIGINS` incluye `https://habita.pe` y `https://www.habita.pe`.
+5. Variables de Supabase y Gemini/Groq correctamente guardadas.
+6. Ejecutar de nuevo `npm ci --omit=dev` y reiniciar.
 
 El frontend ahora usa fallback automatico de base API para reducir caidas por ruta/host incorrectos.
+
+## 10) Respaldo temporal (si DirectAdmin aun no enruta `/habby/api`)
+
+Mientras cierras el enrutamiento en DirectAdmin, puedes mantener operativo el widget desde Vercel:
+
+```html
+<script src="https://habby-chatbot.vercel.app/habby.js" defer></script>
+```
+
+Cuando `/habby/api/health` ya responda `200`, vuelve al script final:
+
+```html
+<script src="https://habita.pe/habby/habby.js" defer></script>
+```

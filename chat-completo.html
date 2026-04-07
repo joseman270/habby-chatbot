@@ -258,6 +258,21 @@
     </style>
 </head>
 <body>
+    <!-- Forzar API base correcta cuando se publica bajo /habby -->
+    <script>
+        (function () {
+            const path = window.location.pathname || '';
+            if (/\/habby(\/|$)/i.test(path)) {
+                window.HABBY_API_BASE = `${window.location.origin}/habby/api`;
+                return;
+            }
+
+            if (!window.HABBY_API_BASE) {
+                window.HABBY_API_BASE = 'https://habby-chatbot.vercel.app/api';
+            }
+        })();
+    </script>
+
     <!-- Script de Habby (local para visualizar cambios recientes) -->
     <script src="./public/habby.js"></script>
     <script>
