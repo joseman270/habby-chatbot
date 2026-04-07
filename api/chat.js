@@ -360,6 +360,85 @@ function looksLikeSellerFeasibilityQuery(text) {
     && /(terreno|lote|casa|departamento|inmueble|propiedad)/.test(t);
 }
 
+function isMarketAnalysisQuery(text) {
+  const t = normalizeForSearch(text);
+  const hasMarketSignal = /(en que ano|en que año|que ano|que año|anio|año|historico|histórico|tendencia|mercado|vendieron|ventas|se vendio|se vendieron|demanda|precio promedio)/.test(t);
+  const hasRealEstateSignal = /(casa|casas|departamento|departamentos|terreno|lote|inmueble|propiedad|cusco|distrito|zona)/.test(t);
+  return hasMarketSignal && hasRealEstateSignal;
+}
+
+function parsePriceNumberFromProperty(property) {
+  const raw = String(property?.priceRaw || property?.price || '');
+  const normalized = raw.replace(/[^\d.]/g, '');
+  if (!normalized) return null;
+  const num = Number(normalized);
+  return Number.isFinite(num) ? num : null;
+}
+
+function inferCityFromQuery(text, properties = []) {
+  const t = normalizeForSearch(text);
+  if (t.includes('cusco')) return 'Cusco';
+
+  const seen = new Set();
+  for (const property of properties) {
+    const city = String(property?.city || '').split(',')[0].trim();
+    if (!city) continue;
+    const normalizedCity = normalizeForSearch(city);
+    if (!normalizedCity || seen.has(normalizedCity)) continue;
+    seen.add(normalizedCity);
+    if (t.includes(normalizedCity)) return city;
+  }
+
+  return '';
+}
+
+function buildMarketAnalysisReply({ text, properties, waUrl }) {
+  const query = String(text || '');
+  const operation = detectOperation(query);
+  const preferredType = detectPropertyTypePreference(query);
+  const city = inferCityFromQuery(query, properties);
+
+  const filtered = (properties || []).filter((property) => {
+    const status = normalizeForSearch(property.status);
+    const cityHaystack = normalizeForSearch(`${property.city} ${property.address}`);
+
+    if (operation === 'venta' && !/(venta|vender|compra)/.test(status)) return false;
+    if (operation === 'alquiler' && !/(alquiler|alquilar|renta)/.test(status)) return false;
+    if (preferredType && !typeMatchesPreference(property, preferredType)) return false;
+    if (city && !cityHaystack.includes(normalizeForSearch(city))) return false;
+    return true;
+  });
+
+  const source = filtered.length ? filtered : (properties || []);
+  const prices = source
+    .map((property) => parsePriceNumberFromProperty(property))
+    .filter((value) => Number.isFinite(value));
+
+  const cityLabel = city || 'la zona consultada';
+  const propertyLabel = preferredType || 'inmuebles';
+  const qty = source.length;
+
+  let priceLine = 'No tengo suficiente detalle de precios para calcular un promedio confiable ahora mismo.';
+  if (prices.length) {
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const avg = Math.round(prices.reduce((acc, val) => acc + val, 0) / prices.length);
+    priceLine = `Con la oferta actual en catálogo, el rango referencial va de ${min.toLocaleString('es-PE')} a ${max.toLocaleString('es-PE')}, con promedio aproximado de ${avg.toLocaleString('es-PE')}.`;
+  }
+
+  return buildStructuredReply({
+    title: `Análisis inmobiliario para ${propertyLabel} en ${cityLabel}`,
+    bullets: [
+      'Para responder exactamente qué año se vendieron más propiedades se requiere histórico de cierres (no solo catálogo activo).',
+      `Con la data disponible de Habita, hoy veo ${qty} opciones relevantes para tu consulta.`,
+      priceLine,
+      'Si quieres precisión por año, te ayudo a estructurar un reporte con fuentes registrales + tu data comercial.',
+      `También podemos revisarlo con un asesor aquí: ${waUrl}`,
+    ],
+    question: '¿Quieres que te arme un comparativo por año y tipo de inmueble en Cusco?',
+  });
+}
+
 function buildSellerEvaluationReply({ text, waUrl }) {
   const raw = String(text || '');
   const location = /san sebasti[aá]n/i.test(raw) ? 'San Sebastián' : 'tu zona';
@@ -679,6 +758,14 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
         `Si prefieres, tambien puedes coordinar por WhatsApp: ${waUrl}`,
       ],
       question: '¿Te parece si empezamos ahora?',
+    });
+  }
+
+  if (isMarketAnalysisQuery(t)) {
+    return buildMarketAnalysisReply({
+      text,
+      properties,
+      waUrl,
     });
   }
 

@@ -61,6 +61,14 @@ const tests = [
     mustIncludeAny: ['terreno', 'san sebastian', 'factible', 'acceso', 'document'],
     expectStructured: true,
   },
+  {
+    name: 'Analítica ventas por año Cusco',
+    profile: 'vendedor',
+    message: 'en que año se vendieron mas casas en cusco?',
+    mustIncludeAny: ['ano', 'año', 'historico', 'cusco', 'catalogo', 'reporte'],
+    mustNotIncludeAny: ['vender con habita te da mas alcance y mejor presentacion'],
+    expectStructured: true,
+  },
 ];
 
 const dialogueTests = [
