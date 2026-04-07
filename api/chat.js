@@ -445,6 +445,16 @@ function isSellerGeneralIntent(text) {
   return /(vender|venta|tasar|valorar|avaluar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble|terreno|lote|casa|departamento|depa|dpto|inmueble|propiedad)/.test(t);
 }
 
+function isAgentCaptureIntent(text) {
+  const t = normalizeForSearch(text);
+  return /(captar|captacion|inmueble para captar|propiedad para captar|tengo un inmueble|tengo una propiedad|tengo inmueble|tengo propiedad|quiero captar)/.test(t);
+}
+
+function isAgentValueIntent(text) {
+  const t = normalizeForSearch(text);
+  return /(agente|corredor|comision|comisiones|beneficio|beneficios|alianza|colaborar|trabajar con habita|como trabajamos|como funciona|modelo de trabajo|soporte comercial|marketing|equipo comercial|ganancia|porcentaje)/.test(t);
+}
+
 
 function isMarketAnalysisQuery(text) {
   const t = normalizeForSearch(text);
@@ -693,6 +703,21 @@ function buildAgentFollowUpReply({ waUrl }) {
       `Podemos revisarlo por WhatsApp: ${waUrl}`,
     ],
     question: '¿Me compartes el tipo de inmueble y la zona para orientarte?',
+  });
+}
+
+function buildAgentCaptureReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Excelente, revisemos ese inmueble para captar',
+    bullets: [
+      '🏠 Tipo de inmueble (casa, depa, terreno, local u oficina).',
+      '📍 Ubicación exacta (distrito y referencia).',
+      '💰 Precio esperado o rango de mercado.',
+      '📄 Documentación: ¿está inscrito y libre de cargas?',
+      '📸 ¿Tienes fotos o video? Si no, nosotros lo gestionamos.',
+      `📲 Si prefieres, lo vemos directo por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Qué tipo de inmueble es y en qué zona está?',
   });
 }
 
@@ -1176,7 +1201,11 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
     });
   }
 
-  if (profile === 'agente' && /(agente|corredor|comision|captar|cliente|colaborar|alianza|trabajar con habita|inmueble de cliente)/.test(normalized)) {
+  if (profile === 'agente' && isAgentCaptureIntent(normalized)) {
+    return buildAgentCaptureReply({ waUrl });
+  }
+
+  if (profile === 'agente' && isAgentValueIntent(normalized)) {
     return buildAgentValueReply({ waUrl });
   }
 
@@ -1218,7 +1247,7 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
   }
 
   if (profile === 'agente') {
-    return buildAgentValueReply({ waUrl });
+    return RULES_ONLY_MODE ? buildAgentValueReply({ waUrl }) : null;
   }
 
   // Comprador fallback: si llegó aquí, podría ser una pregunta sin estructura clara

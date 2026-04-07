@@ -9,7 +9,8 @@
     "smoke": "node scripts/smoke-test.mjs",
     "chat:qa": "node scripts/chat-regression.mjs",
     "qa:comprehensive": "node scripts/comprehensive-qa.mjs",
-    "test:seller-flow": "node scripts/test-seller-flow-improvement.mjs"
+    "test:seller-flow": "node scripts/test-seller-flow-improvement.mjs",
+    "test:agent-flow": "node scripts/test-agent-flow.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
