@@ -29,17 +29,20 @@ function getProfilePrompt(profile) {
 La persona quiere vender su inmueble directamente con Habita.
 
 Objetivo:
-- Resaltar beneficios claros de vender con Habita
-- Explicar el valor de nuestro equipo comercial y de marketing
+- Resaltar beneficios concretos de vender con Habita y por qué acelera el cierre
+- Explicar el valor del equipo comercial, de marketing y audiovisual
 - Guiar a una cita de valoración o llamada con asesor
 
 Propuesta de valor que debes comunicar:
 - Estrategia comercial para acelerar la venta
-- Producción de contenido inmobiliario de alta calidad
+- Producción de fotos y video profesional para presentar mejor el inmueble
+- Tomas con drones cuando la propiedad lo amerite
 - Difusión y publicidad digital para generar más interesados
+- Filtro de leads y visitas calificadas para evitar pérdida de tiempo
 - Acompañamiento profesional durante todo el proceso
 
-Si piden detalles específicos (tiempos, costos exactos o condiciones legales), indica que un asesor humano confirmará esos puntos con precisión.`;
+Si piden detalles específicos (tiempos, costos exactos o condiciones legales), indica que un asesor humano confirmará esos puntos con precisión.
+Si preguntan por beneficios, desarrolla el valor comercial con tono persuasivo, pero claro y conciso.`;
   }
 
   if (profile === 'agente') {
@@ -47,17 +50,19 @@ Si piden detalles específicos (tiempos, costos exactos o condiciones legales), 
 La persona es un agente/corredor con contacto de inmueble y quiere trabajar con Habita.
 
 Objetivo:
-- Explicar modelo de colaboración con Habita
+- Explicar el modelo de colaboración con Habita
 - Destacar comisiones competitivas y soporte comercial
-- Incentivar una reunión para revisar caso y acordar condiciones
+- Incentivar una reunión para revisar el caso y acordar condiciones
 
 Propuesta de valor que debes comunicar:
-- Comisiones bajas o competitivas según operación
-- Soporte integral de marketing y publicidad
-- Cobertura audiovisual con cámaras, drones y piezas promocionales
-- Gestión de interesados y apoyo en agenda de citas
+- Comisión competitiva según operación; no inventes porcentajes exactos
+- Soporte integral de marketing y publicidad para aumentar cierres
+- Cobertura audiovisual con cámaras, fotos, video y drones
+- Gestión de interesados, seguimiento y apoyo en agenda de citas
+- Más oportunidades por rotación, alcance y respaldo comercial
 
-No inventes porcentajes ni condiciones contractuales exactas. Si las piden, deriva a asesor humano para propuesta formal.`;
+No inventes porcentajes ni condiciones contractuales exactas. Si las piden, deriva a asesor humano para propuesta formal.
+Si preguntan cuánto gana, aclara que depende del caso y remarca que el valor está en el volumen, la rapidez y el soporte comercial.`;
   }
 
   return `## ENFOQUE POR PERFIL: COMPRADOR
@@ -332,6 +337,37 @@ function normalizeReplyPresentation({ reply, intent, waUrl }) {
   });
 }
 
+function buildSellerValueReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Vender con Habita te da más alcance y mejor presentación',
+    bullets: [
+      '📸 Producción de fotos y video profesional para mostrar mejor tu inmueble.',
+      '🚁 Tomas con drones cuando la propiedad lo amerita para destacar ubicación y entorno.',
+      '📣 Difusión digital y marketing en canales adecuados para generar más interesados.',
+      '🧾 Valuación comercial para ayudarte a fijar un precio competitivo.',
+      '👀 Filtro de leads y visitas calificadas para no perder tiempo con curiosos.',
+      `📲 Si quieres, coordinamos por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Quieres que te explique el proceso paso a paso para vender tu inmueble?',
+  });
+}
+
+function buildAgentValueReply({ waUrl }) {
+  return buildStructuredReply({
+    title: 'Con Habita puedes cerrar más rápido y con respaldo comercial',
+    bullets: [
+      '💼 Comision competitiva segun la operacion; el porcentaje exacto lo confirma un asesor.',
+      '📣 Publicidad, marketing y difusión para mover más leads y oportunidades.',
+      '📷📹 Fotos, video y camaras para presentar mejor el inmueble.',
+      '🚁 Drones cuando la propiedad lo amerita para elevar el valor percibido.',
+      '📅 Apoyo en agenda, seguimiento y filtro de interesados.',
+      '📈 Ganas más por rotación y cierres respaldados por el equipo comercial.',
+      `📲 Coordinamos por WhatsApp: ${waUrl}`,
+    ],
+    question: '¿Quieres revisar un caso concreto para orientarte mejor?',
+  });
+}
+
 function detectIntent(text) {
   const t = normalizeForSearch(text);
   if (/(asesor|humano|telefono|whatsapp|llamar|contactar)/.test(t)) return 'advisor';
@@ -545,17 +581,7 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   }
 
   if (profile === 'vendedor' && /(vender|venta|tasar|valorar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble)/.test(normalized)) {
-    return buildStructuredReply({
-      title: 'Excelente decision: te ayudo a vender con enfoque comercial',
-      bullets: [
-        'Comparte tipo de inmueble.',
-        'Indica distrito o zona.',
-        'Menciona area aproximada y numero de ambientes.',
-        'Precio esperado (opcional).',
-        `Atencion comercial directa por WhatsApp: ${waUrl}`,
-      ],
-      question: '¿Quieres que lo derive de inmediato con un asesor comercial?',
-    });
+    return buildSellerValueReply({ waUrl });
   }
 
   if (profile === 'vendedor' && looksLikeOwnerPropertyDescription(normalized)) {
@@ -571,17 +597,7 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   }
 
   if (profile === 'agente' && /(agente|corredor|comision|captar|cliente|colaborar|alianza|trabajar con habita|inmueble de cliente)/.test(normalized)) {
-    return buildStructuredReply({
-      title: 'Excelente, podemos colaborar contigo',
-      bullets: [
-        'Tipo de inmueble y zona.',
-        'Operacion (venta o alquiler).',
-        'Rango de precio.',
-        'Si ya tienes propietario o cliente calificado.',
-        `Coordinacion comercial directa por WhatsApp: ${waUrl}`,
-      ],
-      question: '¿Te coordino reunion con asesor comercial para cerrar condiciones?',
-    });
+    return buildAgentValueReply({ waUrl });
   }
 
   if (profile === 'agente' && looksLikeOwnerPropertyDescription(normalized)) {
@@ -618,25 +634,11 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   if (propertyReply) return propertyReply;
 
   if (profile === 'vendedor') {
-    return buildStructuredReply({
-      title: 'Te acompano en la venta con enfoque comercial',
-      bullets: [
-        'Comparte zona, tipo de inmueble y metraje para orientacion inicial.',
-        `Tambien puedes coordinar directo por WhatsApp: ${waUrl}`,
-      ],
-      question: '¿Quieres una orientacion inicial ahora mismo?',
-    });
+    return buildSellerValueReply({ waUrl });
   }
 
   if (profile === 'agente') {
-    return buildStructuredReply({
-      title: 'Te ayudo a estructurar una colaboracion comercial',
-      bullets: [
-        'Cuentame tipo de inmueble, zona y operacion.',
-        `Si prefieres, coordinamos directo con asesor: ${waUrl}`,
-      ],
-      question: '¿Quieres que revisemos una oportunidad concreta?',
-    });
+    return buildAgentValueReply({ waUrl });
   }
 
   return null;

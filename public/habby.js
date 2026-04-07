@@ -24,7 +24,7 @@
   const PROFILE_COPY = {
     comprador: {
       label: 'Comprador',
-      intro: 'Perfecto. Te ayudaré a encontrar el inmueble ideal con datos reales de nuestro catálogo. ¿Qué estás buscando?',
+      intro: 'Perfecto. Te ayudaré a encontrar el inmueble ideal con datos reales de nuestro catálogo y opciones visuales claras. ¿Qué estás buscando?',
       quick: [
         'Busco depa para comprar',
         'Quiero alquilar un inmueble',
@@ -34,21 +34,21 @@
     },
     vendedor: {
       label: 'Vendedor',
-      intro: 'Excelente. Te cuento cómo Habita puede ayudarte a vender mejor y más rápido con apoyo comercial y marketing profesional. ¿Qué tipo de inmueble deseas vender?',
+      intro: 'Excelente. Te cuento cómo Habita puede ayudarte a vender mejor y más rápido con soporte comercial, fotos, video, camaras, drones y difusión. ¿Qué tipo de inmueble deseas vender?',
       quick: [
         'Quiero vender mi departamento',
-        '¿Qué beneficios tengo con Habita?',
-        '¿Cómo promocionan mi inmueble?',
+        '¿Qué beneficios tengo al vender con Habita?',
+        '¿Cómo usan cámaras, video y drones?',
         'Quiero una llamada de asesor',
       ],
     },
     agente: {
       label: 'Agente de venta',
-      intro: 'Genial. Si tienes un contacto para vender, podemos colaborar con comisiones competitivas y soporte integral de marketing, contenido audiovisual y citas. ¿Te explico cómo trabajamos?',
+      intro: 'Genial. Si tienes un contacto para vender, podemos colaborar con comision competitiva, soporte integral de marketing, contenido audiovisual, drones, camaras y agenda de citas. ¿Te explico cómo trabajamos?',
       quick: [
         'Tengo un inmueble para captar',
-        'Quiero trabajar con baja comisión',
-        '¿Qué apoyo de marketing ofrecen?',
+        '¿Qué comisión manejan?',
+        '¿Qué apoyo de marketing y publicidad ofrecen?',
         'Quiero coordinar una reunión',
       ],
     },
@@ -134,9 +134,9 @@
 #hb-send:active:not(:disabled){transform:scale(.94)}
 #hb-send:disabled{opacity:.35;cursor:default}
 #hb-note{text-align:center;font-size:10.5px;color:#9ca3af;margin:0;padding:5px 12px 8px;flex-shrink:0}
-.hb-cards{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}
+.hb-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:8px;align-items:stretch;width:100%}
 .hb-card{background:#fff;border:1px solid rgba(15,23,42,.08);border-radius:12px;overflow:hidden;box-shadow:0 6px 16px rgba(15,23,42,.06)}
-.hb-card-media{height:110px;background:${CARD_FALLBACK_BG};position:relative}
+.hb-card-media{aspect-ratio:16/9;min-height:104px;max-height:156px;background:${CARD_FALLBACK_BG};position:relative}
 .hb-card-media img{width:100%;height:100%;object-fit:cover;display:block}
 .hb-card-body{padding:10px}
 .hb-card-title{font-size:12.5px;font-weight:700;color:#111827;line-height:1.35;margin-bottom:4px}
@@ -146,12 +146,12 @@
 .hb-card-btn:hover{background:${ACCENT};color:#fff;border-color:${ACCENT}}
 .hb-card-skeleton{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}
 .hb-sk-item{border-radius:12px;background:#fff;border:1px solid rgba(15,23,42,.06);overflow:hidden}
-.hb-sk-media{height:96px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0,#f1f5f9);background-size:220% 100%;animation:hbSk 1.2s linear infinite}
+.hb-sk-media{aspect-ratio:16/9;min-height:96px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0,#f1f5f9);background-size:220% 100%;animation:hbSk 1.2s linear infinite}
 .hb-sk-line{height:10px;margin:8px 10px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0,#f1f5f9);background-size:220% 100%;animation:hbSk 1.2s linear infinite;border-radius:999px}
 .hb-sk-line.w70{width:70%}
 .hb-sk-line.w45{width:45%}
 @keyframes hbSk{0%{background-position:0% 0}100%{background-position:220% 0}}
-@media(max-width:420px){#hb-box{right:0;bottom:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:none}#hb-btn{bottom:16px;right:16px}}
+@media(max-width:420px){#hb-box{right:0;bottom:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:none}#hb-btn{bottom:16px;right:16px}.hb-cards{grid-template-columns:1fr}}
 `;
   document.head.appendChild(style);
 
