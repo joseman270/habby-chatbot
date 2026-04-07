@@ -348,6 +348,86 @@ function normalizeReplyPresentation({ reply, intent, waUrl }) {
   });
 }
 
+function addVariationToReply(baseReply, attemptCount = 0) {
+  if (!baseReply || !baseReply.includes('•')) return baseReply;
+
+  const variations = [
+    (r) => r, // 0: sin cambio
+    (r) => r.replace(/Perfecto/g, 'Excelente').replace(/Te ayudo/g, 'Puedo ayudarte'),
+    (r) => r.replace(/¿/g, '👉 ¿').replace(/\?/g, '?'), // 1: emojis
+    (r) => {
+      // 2: reorganizar bullets
+      const lines = r.split('\n');
+      if (lines.length < 4) return r;
+      return [lines[0], ...lines.slice(1).sort(() => Math.random() - 0.5)].join('\n');
+    },
+    (r) => r.replace(/te /gi, 'te ').slice(0, Math.round(r.length * 0.9)), // 3: variación sutile
+  ];
+
+  const fn = variations[attemptCount % variations.length];
+  return fn(baseReply);
+}
+
+function normalizeForComparison(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .trim();
+}
+
+function detectRecentDuplicateReply(reply, messages, maxLookback = 3) {
+  if (!reply) return false;
+
+  const normalized = normalizeForComparison(reply);
+  if (normalized.length < 20) return false;
+
+  let duplicateCount = 0;
+  let checkLimit = 0;
+
+  for (let i = messages.length - 1; i >= 0 && checkLimit < maxLookback; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant') {
+      const prevNormalized = normalizeForComparison(msg.content);
+      if (prevNormalized === normalized) {
+        duplicateCount += 1;
+      }
+      checkLimit += 1;
+    }
+  }
+
+  return duplicateCount > 0;
+}
+
+function buildDuplicateAvoidanceReply({ attemptNum = 0, waUrl }) {
+  const variations = [
+    buildStructuredReply({
+      title: 'Déjame aclarar mejor',
+      bullets: [
+        'Parece que necesitamos algunos detalles diferentes para ayudarte de forma más específica.',
+        '¿Podrías describir tu situación con un poco más de detalle?',
+      ],
+      question: '¿Qué es lo más importante para ti en esta búsqueda?',
+    }),
+    buildStructuredReply({
+      title: 'Intentemos desde otro ángulo',
+      bullets: [
+        'A veces la búsqueda es más clara si la enfocamos de otra manera.',
+        'Por ejemplo: ¿cuál es tu prioridad principal, zona o precio?',
+      ],
+      question: '¿Qué factor pesa más en tu decisión?',
+    }),
+    buildStructuredReply({
+      title: 'Entiendo, vamos a buscar de forma diferente',
+      bullets: [
+        'Habita tiene varias estrategias de búsqueda. ¿Prefieres ver opciones por zona, presupuesto o tipo de propiedad?',
+      ],
+      question: '¿Por dónde te gustaría empezar?',
+    }),
+  ];
+
+  return variations[(attemptNum || 0) % variations.length];
+}
+
 function isShortAffirmation(text) {
   const t = normalizeForSearch(text);
   return /^(si|sí|sii+|si porfa|si claro|claro|dale|ok|okay|listo|perfecto|va|de acuerdo|porfa|por favor|dale pues)$/.test(t)
@@ -843,12 +923,168 @@ function looksLikeOwnerPropertyDescription(text) {
   return hasPropertyWord && hasMetricOrAmount;
 }
 
+function extractPriceFromText(text) {
+  const matches = text.match(/(\d+\.?\d*)\s*k|(\d+\.?\d*)\s*mil|(\d+\.?\d*)\s*usd|s?\.\s*(\d+\.?\d*)|presupuesto\s*(?:de\s+)?(?:s?\.\s*)?(\d+\.?\d*)/i);
+  if (!matches) return null;
+  for (let i = 1; i < matches.length; i++) {
+    if (matches[i]) {
+      const num = parseFloat(matches[i]);
+      if (num > 100) return num;
+      if (matches[0].includes('k') || matches[0].includes('mil')) return num * 1000;
+      return num;
+    }
+  }
+  return null;
+}
+
+function extractLocationFromText(text) {
+  const t = normalizeForSearch(text);
+  const cuscoZones = ['cusco', 'wanchaq', 'santiago', 'centro', 'jose luis', 'playa', 'quispicanchi', 'urubamba', 'ollantaytambo'];
+  for (const zone of cuscoZones) {
+    if (t.includes(zone)) return zone;
+  }
+  return null;
+}
+
+function hasMissingCriteria(text, messages) {
+  const t = normalizeForSearch(text);
+  const hasPrice = /(\d+\.?\d*)\s*(k|mil|usd|soles|s\.|presupuesto)/.test(text);
+  const hasLocation = /cusco|zona|distrito|wanchaq|centro|santiago/.test(t);
+  const hasPropertyType = /(casa|departamento|depa|dpto|terreno|lote|local|oficina)/.test(t);
+
+  const missing = [];
+  if (!hasLocation) missing.push('ubicación');
+  if (!hasPrice) missing.push('presupuesto');
+  if (!hasPropertyType) missing.push('tipo de propiedad');
+
+  return {
+    hasMissing: missing.length > 0,
+    missing,
+    hasPrice,
+    hasLocation,
+    hasPropertyType,
+  };
+}
+
+function detectPriceContradiction(text, messages) {
+  const currentPrice = extractPriceFromText(text);
+  if (!currentPrice) return null;
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'user' && i < messages.length - 1) {
+      const prevPrice = extractPriceFromText(msg.content);
+      if (prevPrice && Math.abs(currentPrice - prevPrice) > (prevPrice * 0.25)) {
+        return {
+          previous: prevPrice,
+          current: currentPrice,
+          isDifferent: true,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function buildIncompletionReply({ missing, hasPrice, hasLocation, text, waUrl }) {
+  if (missing.length === 0) return null;
+
+  if (missing.length === 3) {
+    return buildStructuredReply({
+      title: 'Perfecto, voy a ayudarte pero necesito algunos detalles',
+      bullets: [
+        '📍 ¿En qué zona o distrito buscas? (Ej: Cusco, Wanchaq)',
+        '💰 ¿Cuál es tu presupuesto? (Ej: 100 mil)',
+        '🏠 ¿Qué tipo de propiedad? (Ej: casa, departamento)',
+      ],
+      question: '¿Me compartes estos 3 datos para hacer una búsqueda más precisа?',
+    });
+  }
+
+  if (missing.includes('ubicación') && missing.includes('presupuesto')) {
+    return buildStructuredReply({
+      title: 'Vamos a afinar la búsqueda',
+      bullets: [
+        '📍 Primero, ¿en qué zona o distrito buscas?',
+        '💰 ¿Y cuál es tu presupuesto aproximado?',
+      ],
+      question: '¿Cuéntame esos dos datos?',
+    });
+  }
+
+  if (missing.includes('presupuesto')) {
+    return buildStructuredReply({
+      title: 'Buena información, solo me falta un dato',
+      bullets: [
+        `Veo que buscas ${missing.includes('ubicación') ? 'una ubicación específica' : 'una propiedad'}.`,
+        '💰 ¿Cuál es tu presupuesto máximo?',
+      ],
+      question: '¿Cuál sería el rango que manejаs?',
+    });
+  }
+
+  if (missing.includes('ubicación')) {
+    return buildStructuredReply({
+      title: 'Casi listo, me falta conocer la zona',
+      bullets: [
+        `Entiendo que buscas ${hasPropertyType ? 'ese tipo de propiedad' : 'algo'} con presupuesto ${hasPrice ? 'definido' : 'flexible'}.`,
+        '📍 ¿En qué zona o distrito está tu interés?',
+      ],
+      question: '¿Dónde te gustaría buscar?',
+    });
+  }
+
+  return null;
+}
+
+function buildContradictionReply({ previous, current, waUrl }) {
+  return buildStructuredReply({
+    title: 'Noto que hay un cambio en tu presupuesto',
+    bullets: [
+      `Hace poco mencionaste presupuesto de $${(previous / 1000).toFixed(0)}K.`,
+      `Ahora buscas opciones de $${(current / 1000).toFixed(0)}K.`,
+      'Ambos presupuestos son válidos; solo quiero asegurarme de entenderte bien.',
+    ],
+    question: `¿Prefieres filtrar por $${(previous / 1000).toFixed(0)}K o changear a $${(current / 1000).toFixed(0)}K?`,
+  });
+}
+
 function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }) {
   const t = String(text || '').toLowerCase();
   const normalized = normalizeForSearch(text || '');
   const lastAssistant = getLastAssistantMessage(messages);
 
   if (!t) return null;
+
+  // PRIORITY 1: Detectar y resolver contradicciones en presupuesto
+  if (profile === 'comprador' && isPropertySearchIntent(t)) {
+    const contradiction = detectPriceContradiction(text, messages);
+    if (contradiction && contradiction.isDifferent) {
+      return buildContradictionReply({
+        previous: contradiction.previous,
+        current: contradiction.current,
+        waUrl,
+      });
+    }
+  }
+
+  // PRIORITY 2: Detectar información incompleta y solicitar
+  if (profile === 'comprador' && isPropertySearchIntent(t)) {
+    const incompleteness = hasMissingCriteria(text, messages);
+    if (incompleteness.hasMissing && messages.length < 5) {
+      const incompletionReply = buildIncompletionReply({
+        missing: incompleteness.missing,
+        hasPrice: incompleteness.hasPrice,
+        hasLocation: incompleteness.hasLocation,
+        text,
+        waUrl,
+      });
+      if (incompletionReply) {
+        return incompletionReply;
+      }
+    }
+  }
 
   if (/(hola|buenas|buenos dias|buenas tardes|buenas noches)\b/.test(t)) {
     return buildStructuredReply({
@@ -977,6 +1213,21 @@ function buildRuleBasedReply({ text, profile, waUrl, properties, messages = [] }
     return buildAgentValueReply({ waUrl });
   }
 
+  // Comprador fallback: si llegó aquí, podría ser una pregunta sin estructura clara
+  if (profile === 'comprador') {
+    const isQuestion = t.endsWith('?');
+    if (isQuestion && !isPropertySearchIntent(t)) {
+      // Pregunta vaga o fuera de contexto - redirigir
+      return buildStructuredReply({
+        title: 'Estoy optimizado para temas de propiedades e inmuebles',
+        bullets: [
+          'Puedo ayudarte con búsqueda, filtros, información de inmuebles y coordinación de visitas.',
+        ],
+        question: '¿Quieres que te muestre opciones de compra o alquiler?',
+      });
+    }
+  }
+
   return null;
 }
 
@@ -1071,6 +1322,28 @@ module.exports = async (req, res) => {
     properties: properties.length ? properties : contextProperties,
     profile: normalizedProfile,
   });
+
+  // ANTI-LOOP: Check if exact same query was asked in last 2 turns (PRIORITY!)
+  const recentUserQueries = messages
+    .filter((m) => m.role === 'user')
+    .slice(-2)
+    .map((m) => normalizeForComparison(m.content));
+  const normalizedCurrentQuery = normalizeForComparison(lastUserMessage);
+  const isExactRepeat = recentUserQueries.includes(normalizedCurrentQuery) && recentUserQueries.length > 0;
+
+  if (isExactRepeat && profile === 'comprador') {
+    return res.json({
+      reply: buildDuplicateAvoidanceReply({
+        attemptNum: Math.floor(messages.length / 2),
+        waUrl,
+      }),
+      provider: 'duplicate-avoidance',
+      bypassedLlm: true,
+      intent,
+      ui: uiPayload,
+    });
+  }
+
   const ruleReply = buildRuleBasedReply({
     text: lastUserMessage,
     profile: normalizedProfile,
@@ -1137,6 +1410,8 @@ Tu trabajo es:
 - Si faltan datos para responder bien: pedir máximo 2 datos concretos.
 - Si hay ambigüedad entre varias propiedades: mostrar opciones y pedir confirmación.
 - No entregar respuestas genéricas repetidas; usar el contexto de mensajes previos para continuar la conversación.
+- **CRÍTICO: Si el usuario hace la misma pregunta o muy parecida a una anterior, NO repetir respuesta igual. Cambia el enfoque, pregunta diferente, o profundiza.**
+- **Cada respuesta debe ser única. Lee TODA la conversación previa. Si ya respondiste algo parecido, reformula o pide más detalles.**
 
 ## FLUJO DE CONVERSACION DINAMICO
 Paso 1: Identifica intención principal (comprar, vender, alquilar, analizar mercado, agendar, hablar con asesor).
@@ -1205,13 +1480,24 @@ ${propertiesContext}
       });
     }
 
+    const normalizedReply = normalizeReplyPresentation({
+      reply: result.reply,
+      intent,
+      waUrl,
+    });
+
+    // Detectar si es un bucle (respuesta duplicada)
+    const isDuplicate = detectRecentDuplicateReply(normalizedReply, messages, 2);
+    const finalReply = isDuplicate
+      ? buildDuplicateAvoidanceReply({
+          attemptNum: (result.attempts || []).length,
+          waUrl,
+        })
+      : addVariationToReply(normalizedReply, (result.attempts || []).length);
+
     res.json({
-      reply: normalizeReplyPresentation({
-        reply: result.reply,
-        intent,
-        waUrl,
-      }),
-      provider: result.provider,
+      reply: finalReply,
+      provider: isDuplicate ? 'duplicate-avoidance' : result.provider,
       fallbackAttempts: result.attempts || [],
       intent,
       ui: uiPayload,
