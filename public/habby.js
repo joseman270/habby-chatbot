@@ -16,8 +16,10 @@
   const BOOKING_MIN_DAYS = 1;
   const BOOKING_SLOT_MINUTES = 30;
   const BOOKING_MAX_SLOTS = 12;
-  const PRIMARY      = '#1B4FD8';
-  const PRIMARY_DK   = '#1540B8';
+  const PRIMARY      = '#1E3A8A';
+  const PRIMARY_DK   = '#1B2F73';
+  const ACCENT       = '#11b965';
+  const CARD_FALLBACK_BG = 'linear-gradient(135deg,#1E3A8A 0%,#11b965 100%)';
   const WELCOME      = '¡Hola! 👋 Soy **Habby**, tu asesor inmobiliario de Habita Perú.';
   const PROFILE_COPY = {
     comprador: {
@@ -64,32 +66,56 @@
     data: {},
   };
 
+  function trackEvent(name, payload = {}) {
+    const event = {
+      event: 'habby_event',
+      event_name: name,
+      ...payload,
+      ts: Date.now(),
+    };
+
+    try {
+      if (Array.isArray(window.dataLayer)) {
+        window.dataLayer.push(event);
+      }
+    } catch {}
+
+    try {
+      console.info('[Habby][track]', event);
+    } catch {}
+  }
+
+  function isPropertyIntent(text) {
+    return /(propiedad|propiedades|depa|departamento|casa|inmueble|comprar|alquilar|alquiler|venta|vender|distrito|zona|precio|metros|metraje)/i.test(String(text || ''));
+  }
+
   /* ── Inyectar estilos ── */
   const style = document.createElement('style');
   style.textContent = `
 #hb-wrap *{box-sizing:border-box;font-family:inherit}
 #hb-btn{position:fixed;bottom:24px;right:24px;z-index:999999;width:58px;height:58px;border-radius:50%;background:${PRIMARY};color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(27,79,216,.45);transition:transform .2s,background .2s}
 #hb-btn:hover{background:${PRIMARY_DK};transform:scale(1.07)}
+#hb-btn:focus-visible,#hb-send:focus-visible,.hb-qr:focus-visible,.hb-card-btn:focus-visible{outline:3px solid rgba(17,185,101,.45);outline-offset:2px}
 #hb-badge{position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;font-size:10px;font-weight:700;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
-#hb-box{position:fixed;bottom:96px;right:24px;z-index:999999;width:400px;max-width:calc(100vw - 32px);height:620px;max-height:calc(100vh - 120px);background:#fff;border-radius:16px;box-shadow:0 8px 30px rgba(0,0,0,.15);display:flex;flex-direction:column;overflow:hidden;border:1px solid #e5e7eb;opacity:0;transform:translateY(12px) scale(.97);pointer-events:none;transition:opacity .22s,transform .22s}
+#hb-box{position:fixed;bottom:96px;right:24px;z-index:999999;width:420px;max-width:calc(100vw - 32px);height:660px;max-height:calc(100vh - 120px);background:#fff;border-radius:20px;box-shadow:0 18px 44px rgba(0,0,0,.16);display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(255,255,255,.5);opacity:0;transform:translateY(12px) scale(.97);pointer-events:none;transition:opacity .22s,transform .22s}
 #hb-box.hb-open{opacity:1;transform:none;pointer-events:all}
-#hb-head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:${PRIMARY};color:#fff;flex-shrink:0}
-#hb-av{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0}
+#hb-head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:linear-gradient(135deg,${PRIMARY} 0%,${ACCENT} 100%);color:#fff;flex-shrink:0}
+#hb-av{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.26);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;flex-shrink:0}
 .hb-hinfo{flex:1;display:flex;flex-direction:column;line-height:1.3}
-.hb-hinfo strong{font-size:14px;font-weight:600}
+.hb-hinfo strong{font-size:14px;font-weight:700}
 .hb-status{font-size:11px;opacity:.85;display:flex;align-items:center;gap:4px}
 .hb-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;display:inline-block}
 #hb-clr,#hb-cls{background:none;border:none;color:rgba(255,255,255,.8);cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;transition:background .15s}
 #hb-clr:hover,#hb-cls:hover{background:rgba(255,255,255,.15)}
-#hb-msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+#hb-msgs{flex:1;overflow-y:auto;padding:16px 14px;background:#f8fafc;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
 #hb-msgs::-webkit-scrollbar{width:4px}
 #hb-msgs::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:4px}
 .hb-msg{display:flex;flex-direction:column;max-width:86%;animation:hbIn .2s ease}
 @keyframes hbIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .hb-msg.bot{align-self:flex-start}.hb-msg.usr{align-self:flex-end}
-.hb-bbl{padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.55;word-break:break-word;white-space:pre-wrap}
-.bot .hb-bbl{background:#f3f4f6;color:#111827;border-bottom-left-radius:3px}
-.usr .hb-bbl{background:${PRIMARY};color:#fff;border-bottom-right-radius:3px}
+.hb-bbl{padding:10px 14px;border-radius:14px;font-size:13.5px;line-height:1.58;word-break:break-word;white-space:pre-wrap;box-shadow:0 4px 14px rgba(15,23,42,.04)}
+.bot .hb-bbl{background:#fff;color:#111827;border-bottom-left-radius:4px;border:1px solid rgba(15,23,42,.06)}
+.usr .hb-bbl{background:linear-gradient(135deg,${PRIMARY} 0%,${ACCENT} 100%);color:#fff;border-bottom-right-radius:4px}
 .bot .hb-bbl a{color:${PRIMARY};text-decoration:underline;font-weight:500}
 .hb-typing .hb-bbl{padding:12px 16px}
 .hb-dots{display:flex;gap:5px;align-items:center;height:12px}
@@ -97,17 +123,34 @@
 .hb-dots span:nth-child(2){animation-delay:.2s}.hb-dots span:nth-child(3){animation-delay:.4s}
 @keyframes hbDot{0%,80%,100%{transform:scale(.7);opacity:.5}40%{transform:scale(1);opacity:1}}
 .hb-qrs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-.hb-qr{background:#fff;border:1px solid ${PRIMARY};color:${PRIMARY};border-radius:20px;padding:5px 12px;font-size:12px;cursor:pointer;transition:background .15s,color .15s;font-family:inherit}
-.hb-qr:hover{background:${PRIMARY};color:#fff}
+.hb-qr{background:#fff;border:1px solid rgba(30,58,138,.25);color:${PRIMARY};border-radius:999px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
+.hb-qr:hover{background:${PRIMARY};color:#fff;transform:translateY(-1px)}
 #hb-inp-area{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;border-top:1px solid #e5e7eb;background:#fff;flex-shrink:0}
 #hb-inp{flex:1;resize:none;border:1px solid #e5e7eb;border-radius:10px;padding:9px 12px;font-size:13.5px;font-family:inherit;color:#111827;background:#fff;outline:none;height:40px;min-height:40px;max-height:40px;overflow-y:auto;line-height:1.45;transition:border-color .15s}
-#hb-inp:focus{border-color:${PRIMARY};box-shadow:0 0 0 3px rgba(27,79,216,.12)}
+#hb-inp:focus{border-color:${ACCENT};box-shadow:0 0 0 3px rgba(17,185,101,.12)}
 #hb-inp::placeholder{color:#9ca3af}
 #hb-send{flex-shrink:0;width:38px;height:38px;border-radius:10px;background:${PRIMARY};color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s,opacity .15s,transform .1s}
-#hb-send:hover:not(:disabled){background:${PRIMARY_DK}}
+#hb-send:hover:not(:disabled){background:${ACCENT}}
 #hb-send:active:not(:disabled){transform:scale(.94)}
 #hb-send:disabled{opacity:.35;cursor:default}
 #hb-note{text-align:center;font-size:10.5px;color:#9ca3af;margin:0;padding:5px 12px 8px;flex-shrink:0}
+.hb-cards{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}
+.hb-card{background:#fff;border:1px solid rgba(15,23,42,.08);border-radius:12px;overflow:hidden;box-shadow:0 6px 16px rgba(15,23,42,.06)}
+.hb-card-media{height:110px;background:${CARD_FALLBACK_BG};position:relative}
+.hb-card-media img{width:100%;height:100%;object-fit:cover;display:block}
+.hb-card-body{padding:10px}
+.hb-card-title{font-size:12.5px;font-weight:700;color:#111827;line-height:1.35;margin-bottom:4px}
+.hb-card-meta{font-size:11.5px;color:#334155;line-height:1.5}
+.hb-card-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:rgba(30,58,138,.08);color:${PRIMARY};font-size:10.5px;font-weight:700;margin-bottom:6px}
+.hb-card-btn{margin-top:8px;width:100%;border:1px solid rgba(17,185,101,.35);background:#ecfdf5;color:#065f46;font-size:12px;font-weight:700;border-radius:10px;padding:8px 10px;cursor:pointer;transition:all .2s}
+.hb-card-btn:hover{background:${ACCENT};color:#fff;border-color:${ACCENT}}
+.hb-card-skeleton{display:grid;grid-template-columns:1fr;gap:8px;margin-top:8px}
+.hb-sk-item{border-radius:12px;background:#fff;border:1px solid rgba(15,23,42,.06);overflow:hidden}
+.hb-sk-media{height:96px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0,#f1f5f9);background-size:220% 100%;animation:hbSk 1.2s linear infinite}
+.hb-sk-line{height:10px;margin:8px 10px;background:linear-gradient(90deg,#f1f5f9,#e2e8f0,#f1f5f9);background-size:220% 100%;animation:hbSk 1.2s linear infinite;border-radius:999px}
+.hb-sk-line.w70{width:70%}
+.hb-sk-line.w45{width:45%}
+@keyframes hbSk{0%{background-position:0% 0}100%{background-position:220% 0}}
 @media(max-width:420px){#hb-box{right:0;bottom:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;border:none}#hb-btn{bottom:16px;right:16px}}
 `;
   document.head.appendChild(style);
@@ -163,13 +206,87 @@
 
   function scroll() { requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; }); }
 
-  function addMsg(role, text, withQR = false) {
+  function renderPropertyCards(items = []) {
+    if (!Array.isArray(items) || !items.length) return null;
+
+    const cards = document.createElement('div');
+    cards.className = 'hb-cards';
+
+    items.slice(0, 3).forEach((item) => {
+      const card = document.createElement('article');
+      card.className = 'hb-card';
+
+      const media = document.createElement('div');
+      media.className = 'hb-card-media';
+
+      if (item.imageUrl) {
+        const img = document.createElement('img');
+        img.src = item.imageUrl;
+        img.alt = item.imageAlt || item.title || 'Imagen de propiedad';
+        img.loading = 'lazy';
+        img.addEventListener('error', () => {
+          img.remove();
+        });
+        media.appendChild(img);
+      }
+
+      const body = document.createElement('div');
+      body.className = 'hb-card-body';
+
+      if (item.tag) {
+        const tag = document.createElement('span');
+        tag.className = 'hb-card-tag';
+        tag.textContent = item.tag;
+        body.appendChild(tag);
+      }
+
+      const title = document.createElement('div');
+      title.className = 'hb-card-title';
+      title.textContent = item.title || 'Propiedad';
+
+      const meta = document.createElement('div');
+      meta.className = 'hb-card-meta';
+      meta.innerHTML = `💰 ${item.price || 'Consultar'}<br>📍 ${item.location || 'No especificado'}`;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'hb-card-btn';
+      btn.textContent = 'Ver propiedad';
+      btn.addEventListener('click', () => {
+        if (item.url) {
+          window.open(item.url, '_blank', 'noopener');
+          trackEvent('card_click', {
+            property_id: item.id,
+            property_title: item.title,
+            property_url: item.url,
+          });
+        }
+      });
+
+      body.appendChild(title);
+      body.appendChild(meta);
+      body.appendChild(btn);
+
+      card.appendChild(media);
+      card.appendChild(body);
+      cards.appendChild(card);
+    });
+
+    return cards;
+  }
+
+  function addMsg(role, text, withQR = false, options = {}) {
     const w = document.createElement('div');
     w.className = `hb-msg ${role}`;
     const b = document.createElement('div');
     b.className = 'hb-bbl';
     b.innerHTML = md(text);
     w.appendChild(b);
+
+    if (role === 'bot' && Array.isArray(options.propertySuggestions) && options.propertySuggestions.length) {
+      const cards = renderPropertyCards(options.propertySuggestions);
+      if (cards) w.appendChild(cards);
+    }
 
     if (withQR && role === 'bot') {
       const qrs = document.createElement('div');
@@ -227,6 +344,7 @@
     booking.step = 'name';
     booking.data = {};
     booking.leadId = null;
+    trackEvent('booking_flow_started', { profile: profile || 'unknown' });
     addMsg('bot', 'Perfecto. Te ayudo a agendar una cita. Primero, ¿cuál es tu nombre completo?');
   }
 
@@ -337,6 +455,10 @@
       }
 
       addMsg('bot', data.uiMessage || 'Tu cita fue agendada correctamente.');
+      trackEvent('booking_confirmed', {
+        appointment_id: data?.appointment?.id || null,
+        lead_id: booking.leadId,
+      });
       if (data.email?.sent) {
         addMsg('bot', 'También envié la confirmación a tu correo.');
       }
@@ -401,10 +523,13 @@
     return false;
   }
 
-  function showTyping() {
+  function showTyping(withCardSkeleton = false) {
     const w = document.createElement('div');
     w.id = 'hb-typing'; w.className = 'hb-msg bot hb-typing';
-    w.innerHTML = '<div class="hb-bbl"><div class="hb-dots"><span></span><span></span><span></span></div></div>';
+    const skeleton = withCardSkeleton
+      ? '<div class="hb-card-skeleton"><div class="hb-sk-item"><div class="hb-sk-media"></div><div class="hb-sk-line w70"></div><div class="hb-sk-line"></div><div class="hb-sk-line w45"></div></div></div>'
+      : '';
+    w.innerHTML = `<div class="hb-bbl"><div class="hb-dots"><span></span><span></span><span></span></div>${skeleton}</div>`;
     msgs.appendChild(w); scroll();
   }
   function hideTyping() { const el = document.getElementById('hb-typing'); if (el) el.remove(); }
@@ -457,6 +582,7 @@
     }
 
     addMsg('usr', t);
+    trackEvent('chat_message_sent', { profile: profile || 'unknown', length: t.length });
     history.push({ role: 'user', content: t });
     inp.value = '';
     resize();
@@ -477,7 +603,7 @@
       if (consumed) return;
     }
 
-    showTyping();
+    showTyping(isPropertyIntent(t));
 
     try {
       const r = await fetch(API_URL, {
@@ -491,14 +617,14 @@
 
       if (d.reply) {
         history.push({ role: 'assistant', content: d.reply });
-        addMsg('bot', d.reply);
+        addMsg('bot', d.reply, false, { propertySuggestions: d?.ui?.propertySuggestions || [] });
         if (!open) badge.style.display = 'flex';
       } else {
-        addMsg('bot', '⚠️ ' + (d.error || 'Ocurrió un error. Intenta de nuevo.'));
+        addMsg('bot', '⚠️ Tuvimos un inconveniente al procesar tu consulta. Si quieres, lo intentamos de nuevo en unos segundos.');
       }
     } catch {
       hideTyping();
-      addMsg('bot', '⚠️ Sin conexión. Verifica tu internet e intenta de nuevo.');
+      addMsg('bot', '⚠️ Parece que hubo un problema de conexión. Verifica tu internet y seguimos en segundos.');
     }
 
     loading = false;
@@ -515,6 +641,16 @@
   clrBtn.addEventListener('click', clearChat);
   clsBtn.addEventListener('click', closeChat);
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && open) closeChat(); });
+  msgs.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const anchor = target.closest('a');
+    if (!anchor) return;
+    const href = String(anchor.getAttribute('href') || '');
+    if (/wa\.me|whatsapp/i.test(href)) {
+      trackEvent('whatsapp_click', { href });
+    }
+  });
   inp.addEventListener('input', resize);
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!sendBtn.disabled) send(); }

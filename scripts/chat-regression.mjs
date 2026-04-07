@@ -14,19 +14,23 @@ const tests = [
     profile: 'comprador',
     message: 'busco departamento en miraflores para comprar',
     mustIncludeAny: ['catalogo', 'propiedad', 'opciones'],
+    expectStructured: true,
+    expectCards: true,
   },
   {
     name: 'Agenda de visita',
     profile: 'comprador',
     message: 'quiero agendar una visita',
-    mustIncludeAny: ['cita', 'datos', 'disponibilidad'],
+    mustIncludeAny: ['cita', 'nombre completo', 'celular', 'distrito'],
+    expectStructured: true,
   },
   {
     name: 'Flujo vendedor',
     profile: 'vendedor',
     message: 'soy vendedor y quiero vender mi casa',
-    mustIncludeAny: ['vender', 'inmueble', 'valuacion', 'valoracion'],
+    mustIncludeAny: ['vender', 'inmueble', 'comercial', 'asesor'],
     mustNotIncludeAny: ['ficha encontrada en habita.pe', 'catalogo de habita pueden encajar', 'en habita.pe encontre varias propiedades'],
+    expectStructured: true,
   },
   {
     name: 'Vendedor no cruza a compra',
@@ -34,18 +38,21 @@ const tests = [
     message: 'terreno san sebastian y es de 300m2',
     mustIncludeAny: ['valuacion', 'venta', 'inmueble', 'asesor'],
     mustNotIncludeAny: ['ficha encontrada en habita.pe', 'en habita.pe encontre varias propiedades'],
+    expectStructured: true,
   },
   {
     name: 'Flujo agente',
     profile: 'agente',
     message: 'soy agente y quiero colaborar con comisiones',
-    mustIncludeAny: ['colaborar', 'comercializacion', 'comision', 'asesor'],
+    mustIncludeAny: ['colaborar', 'operacion', 'asesor', 'reunion'],
     mustNotIncludeAny: ['ficha encontrada en habita.pe', 'catalogo de habita pueden encajar', 'en habita.pe encontre varias propiedades'],
+    expectStructured: true,
   },
   {
     name: 'Consulta abierta',
     profile: 'comprador',
     message: 'tengo dudas y necesito orientacion para decidir mejor',
+    expectStructured: true,
   },
 ];
 
@@ -63,6 +70,13 @@ function includesAny(text, terms) {
 
 function hasUrl(text) {
   return /(https?:\/\/|www\.)/i.test(String(text || ''));
+}
+
+function hasStructuredFormat(text) {
+  const value = String(text || '');
+  const hasBullet = /(^|\n)•\s+/m.test(value);
+  const hasQuestion = /\?\s*$/m.test(value.trim());
+  return hasBullet && hasQuestion;
 }
 
 async function fetchProperties() {
@@ -108,6 +122,8 @@ async function buildDetailPropertyTest() {
       shouldMentionAny: titleTokens,
       requiresUrl: true,
       allowsDisambiguation: true,
+      expectStructured: true,
+      expectCards: true,
     };
   } catch {
     return fallback;
@@ -177,10 +193,15 @@ async function getStatus() {
       if (test.mustIncludeAny && !includesAny(reply, test.mustIncludeAny)) caseFailed = true;
       if (test.mustNotIncludeAny && includesAny(reply, test.mustNotIncludeAny)) caseFailed = true;
       if (test.shouldMentionAny && test.shouldMentionAny.length > 0 && !includesAny(reply, test.shouldMentionAny)) caseFailed = true;
+      if (test.expectStructured && !hasStructuredFormat(reply)) caseFailed = true;
       if (test.requiresUrl && !hasUrl(reply)) {
         const isDisambiguation = test.allowsDisambiguation
           && /(varias propiedades parecidas|indica el numero|nombre exacto)/.test(replyNormalized);
         if (!isDisambiguation) caseFailed = true;
+      }
+      if (test.expectCards) {
+        const suggestions = r.data?.ui?.propertySuggestions;
+        if (!Array.isArray(suggestions) || suggestions.length === 0) caseFailed = true;
       }
 
       if (caseFailed) {

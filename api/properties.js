@@ -3,6 +3,7 @@ const WP_URL = process.env.WP_URL || 'https://habita.pe';
 const MAX_PROPS = parseInt(process.env.MAX_PROPERTIES || '20', 10);
 const PROPERTY_CONTEXT_MAX_ITEMS = parseInt(process.env.PROPERTY_CONTEXT_MAX_ITEMS || '6', 10);
 const NO_DATA = 'No especificado en habita.pe';
+const DEFAULT_PROPERTY_IMAGE_URL = process.env.DEFAULT_PROPERTY_IMAGE_URL || '';
 
 // Cache en memoria: se renueva cada 15 minutos.
 let cache = { data: null, ts: 0 };
@@ -22,6 +23,44 @@ function stripHtml(value) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function pickPropertyImage(post) {
+  const embedded = post?._embedded || {};
+  const media = Array.isArray(embedded['wp:featuredmedia'])
+    ? embedded['wp:featuredmedia'][0]
+    : null;
+
+  const sizes = media?.media_details?.sizes || {};
+  const source = String(
+    media?.source_url
+    || sizes?.large?.source_url
+    || sizes?.medium_large?.source_url
+    || sizes?.medium?.source_url
+    || sizes?.thumbnail?.source_url
+    || ''
+  ).trim();
+
+  const thumb = String(
+    sizes?.medium_large?.source_url
+    || sizes?.medium?.source_url
+    || sizes?.thumbnail?.source_url
+    || source
+    || ''
+  ).trim();
+
+  const alt = stripHtml(
+    media?.alt_text
+    || media?.title?.rendered
+    || post?.title?.rendered
+    || 'Imagen de propiedad'
+  );
+
+  return {
+    imageUrl: source || DEFAULT_PROPERTY_IMAGE_URL,
+    imageThumbUrl: thumb || source || DEFAULT_PROPERTY_IMAGE_URL,
+    imageAlt: alt || 'Imagen de propiedad',
+  };
 }
 
 function normalizeSearch(value) {
@@ -184,6 +223,7 @@ async function fetchProperties(options = {}) {
     const meta = post.property_meta || post.meta || {};
     const emb = post._embedded || {};
     const terms = emb['wp:term'] ? emb['wp:term'].flat() : [];
+    const media = pickPropertyImage(post);
     const additionalDetails = parseAdditionalDetails(meta.REAL_HOMES_additional_details_list);
 
     const title = stripHtml(post.title?.rendered || 'Sin titulo');
@@ -243,6 +283,9 @@ async function fetchProperties(options = {}) {
       slug: post.slug || '',
       title,
       url: post.link,
+      imageUrl: media.imageUrl,
+      imageThumbUrl: media.imageThumbUrl,
+      imageAlt: media.imageAlt,
       type,
       status,
       price,

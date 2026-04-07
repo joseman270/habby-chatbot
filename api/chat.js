@@ -210,6 +210,98 @@ function rankPropertiesByReference(properties, queryText) {
     .sort((a, b) => b.score - a.score);
 }
 
+function getPropertyVisualTag(property) {
+  const haystack = normalizeForSearch(`${property.type} ${property.status}`);
+
+  if (/(alquiler|alquilar|renta)/.test(haystack)) return '📅 Alquiler';
+  if (/(venta|vender|compra)/.test(haystack)) return '💰 Venta';
+  if (/(terreno|lote)/.test(haystack)) return '🌿 Terreno';
+  if (/(departamento|depa|dpto|flat)/.test(haystack)) return '🏢 Departamento';
+  if (/(casa|vivienda)/.test(haystack)) return '🏠 Casa';
+  if (/(oficina|office)/.test(haystack)) return '💼 Oficina';
+  return '🏡 Propiedad';
+}
+
+function mapPropertySuggestion(property) {
+  const location = [property.city, property.address].filter(Boolean).join(' - ') || NO_DATA;
+  return {
+    id: property.id,
+    title: property.title,
+    price: property.price,
+    location,
+    type: property.type,
+    status: property.status,
+    areaTotal: property.areaTotal,
+    url: property.url,
+    imageUrl: property.imageThumbUrl || property.imageUrl || '',
+    imageAlt: property.imageAlt || 'Imagen de propiedad',
+    tag: getPropertyVisualTag(property),
+  };
+}
+
+function buildPropertySuggestions({ text, properties, profile, limit = 3 }) {
+  if (profile !== 'comprador') return [];
+  const source = Array.isArray(properties) ? properties : [];
+  if (!source.length) return [];
+
+  const query = String(text || '');
+  const ranked = source
+    .map((property) => {
+      const bySearch = scorePropertyMatch(property, query);
+      const byReference = scorePropertyReference(property, query);
+      return {
+        property,
+        score: (bySearch * 1.2) + (byReference * 1.4),
+      };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const selected = ranked
+    .filter((row) => row.score > 0)
+    .slice(0, limit)
+    .map((row) => mapPropertySuggestion(row.property));
+
+  return selected;
+}
+
+function buildStructuredReply({ title, bullets = [], question = '' }) {
+  const safeTitle = String(title || '').trim();
+  const safeBullets = bullets
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((item) => `• ${item}`);
+  const safeQuestion = String(question || '').trim();
+
+  return [safeTitle, ...safeBullets, safeQuestion ? '' : null, safeQuestion]
+    .filter((line) => line !== null && line !== undefined)
+    .join('\n');
+}
+
+function detectIntent(text) {
+  const t = normalizeForSearch(text);
+  if (/(asesor|humano|telefono|whatsapp|llamar|contactar)/.test(t)) return 'advisor';
+  if (/(agendar|agenda|cita|visita|reunion|horario|disponibilidad)/.test(t)) return 'booking';
+  if (isPropertyDetailIntent(t)) return 'property-detail';
+  if (isPropertySearchIntent(t)) return 'property-search';
+  return 'general';
+}
+
+function buildUiPayload({ text, properties, profile }) {
+  const suggestions = buildPropertySuggestions({
+    text,
+    properties,
+    profile,
+    limit: 3,
+  });
+
+  if (!suggestions.length) return null;
+
+  return {
+    propertySuggestions: suggestions,
+  };
+}
+
 function formatPropertyField(value) {
   const text = String(value || '').trim();
   return text || NO_DATA;
@@ -218,41 +310,39 @@ function formatPropertyField(value) {
 function buildPropertyDetailReply({ property, waUrl }) {
   const place = [property.city, property.address].filter(Boolean).join(' - ') || NO_DATA;
 
-  const lines = [
-    `Ficha encontrada en habita.pe para: ${property.title}`,
-    `- Tipo / estado: ${formatPropertyField(property.type)} / ${formatPropertyField(property.status)}`,
-    `- Precio publicado: ${formatPropertyField(property.price)}`,
-    `- Area total: ${formatPropertyField(property.areaTotal)}`,
-    `- Area de terreno: ${formatPropertyField(property.areaLand)}`,
-    `- Area construida: ${formatPropertyField(property.areaBuilt)}`,
-    `- Dormitorios: ${formatPropertyField(property.beds)} | Banos: ${formatPropertyField(property.baths)} | Garajes: ${formatPropertyField(property.garages)}`,
-    `- Ubicacion: ${place}`,
-    `- Documentacion y titulos: ${formatPropertyField(property.documentation)}`,
+  const details = [
+    `🏠 Inmueble: ${property.title}`,
+    `💰 Precio publicado: ${formatPropertyField(property.price)}`,
+    `📍 Ubicacion: ${place}`,
+    `📐 Area total: ${formatPropertyField(property.areaTotal)}`,
+    `📐 Area terreno: ${formatPropertyField(property.areaLand)} | Area construida: ${formatPropertyField(property.areaBuilt)}`,
+    `🛏️ Dormitorios: ${formatPropertyField(property.beds)} | Banos: ${formatPropertyField(property.baths)} | Garajes: ${formatPropertyField(property.garages)}`,
+    `📄 Documentacion y titulos: ${formatPropertyField(property.documentation)}`,
+    `🔗 URL: ${property.url}`,
   ];
 
-  if (property.features) lines.push(`- Caracteristicas: ${property.features}`);
-  if (property.detailsSummary) lines.push(`- Datos adicionales: ${property.detailsSummary}`);
-  if (property.excerpt) lines.push(`- Resumen: ${property.excerpt}`);
-  lines.push(`- URL: ${property.url}`);
-  lines.push('');
-  lines.push(`Si deseas, te comparo esta opcion con otras similares o te conecto con asesor: ${waUrl}`);
+  if (property.features) details.push(`✅ Caracteristicas: ${property.features}`);
 
-  return lines.join('\n');
+  return buildStructuredReply({
+    title: 'Detalle de inmueble encontrado',
+    bullets: details,
+    question: `¿Deseas que te muestre opciones similares o prefieres coordinar con un asesor por WhatsApp (${waUrl})?`,
+  });
 }
 
 function buildPropertyDisambiguationReply({ matches }) {
   const options = matches.slice(0, 3).map((row, idx) => {
     const p = row.property;
     const area = p.areaTotal || p.areaBuilt || NO_DATA;
-    return `${idx + 1}. ${p.title} | ${p.price} | ${area}`;
+    const location = [p.city, p.address].filter(Boolean).join(' - ') || NO_DATA;
+    return `${idx + 1}) 🏠 ${p.title} | 💰 ${p.price} | 📍 ${location} | 📐 ${area}`;
   }).join('\n');
 
-  return [
-    'En habita.pe encontre varias propiedades parecidas a tu consulta:',
-    options,
-    '',
-    'Indicame el numero o el nombre exacto y te doy la ficha completa con metros, precio y documentacion.',
-  ].join('\n');
+  return buildStructuredReply({
+    title: 'Encontre varias opciones parecidas',
+    bullets: [options],
+    question: '¿Me indicas el numero o el nombre exacto para darte la ficha completa?',
+  });
 }
 
 function buildPropertyDetailIntentReply({ text, properties, waUrl }) {
@@ -262,11 +352,14 @@ function buildPropertyDetailIntentReply({ text, properties, waUrl }) {
   const positive = ranked.filter((row) => row.score >= 4);
 
   if (!positive.length) {
-    return [
-      'No encontre una propiedad exacta con ese nombre en habita.pe en este momento.',
-      'Si me compartes el nombre tal como aparece en la publicacion o el distrito, te doy la ficha detallada.',
-      `Tambien te puedo conectar con un asesor: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'No encontre una propiedad exacta con ese nombre',
+      bullets: [
+        'Si me compartes el nombre tal como aparece en la publicacion o el distrito, te doy la ficha detallada.',
+        `Tambien te puedo conectar con un asesor: ${waUrl}`,
+      ],
+      question: '¿Me compartes el nombre de la publicacion o el distrito?',
+    });
   }
 
   if (positive.length === 1) {
@@ -293,25 +386,27 @@ function buildPropertyRuleReply({ text, properties, waUrl }) {
   const selected = (withScore.length ? withScore : ranked).slice(0, 3).map((row) => row.property);
 
   if (!selected.length) {
-    return [
-      'No encontre propiedades en este momento con ese criterio exacto.',
-      `Si deseas apoyo inmediato, te conecto con un asesor: ${waUrl}`,
-      'Dime si buscas compra o alquiler, distrito y presupuesto aproximado.',
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'No encontre coincidencias exactas por ahora',
+      bullets: [
+        'Puedo buscar alternativas cercanas con mejor ajuste.',
+        `Si deseas apoyo inmediato, te conecto con un asesor: ${waUrl}`,
+      ],
+      question: '¿Buscas compra o alquiler, en que distrito y con que presupuesto aproximado?',
+    });
   }
 
   const lines = selected.map((p, idx) => {
     const place = [p.city, p.address].filter(Boolean).join(' - ') || 'Ubicacion por confirmar';
     const area = p.areaTotal || p.areaBuilt || NO_DATA;
-    return `${idx + 1}. ${p.title}\n${p.price} | ${place}\nArea: ${area}\n${p.url}`;
+    return `${idx + 1}) 🏠 ${p.title} | 💰 ${p.price} | 📍 ${place} | 📐 ${area} | 🔗 ${p.url}`;
   });
 
-  return [
-    'Estas opciones del catalogo de Habita pueden encajar con tu busqueda:',
-    lines.join('\n\n'),
-    '',
-    'Si deseas, te ayudo a filtrar por distrito y presupuesto para darte opciones mas precisas.',
-  ].join('\n');
+  return buildStructuredReply({
+    title: 'Opciones recomendadas de Habita para ti',
+    bullets: [lines.join('\n')],
+    question: '¿Quieres que ahora te filtre por precio maximo o por un distrito especifico?',
+  });
 }
 
 function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
@@ -321,23 +416,28 @@ function buildRulesOnlyFallbackReply({ properties, waUrl, profile }) {
     : 'Si buscas compra o alquiler, dime distrito y presupuesto para filtrar mejor.';
 
   if (!top.length) {
-    return [
-      'Estoy operando en modo local sin IA externa en este momento.',
-      'No tengo el catalogo en vivo disponible ahora mismo.',
-      `Asesor directo: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Estoy operando en modo local sin IA externa',
+      bullets: [
+        'No tengo el catalogo en vivo disponible ahora mismo.',
+        `Asesor directo: ${waUrl}`,
+      ],
+      question: '¿Quieres que te conecte con asesor para atencion inmediata?',
+    });
   }
 
   const list = top
     .map((p, idx) => `${idx + 1}. ${p.title} - ${p.price}\nArea: ${p.areaTotal || p.areaBuilt || NO_DATA}\n${p.url}`)
     .join('\n\n');
-  return [
-    'Estoy operando en modo local sin IA externa.',
-    'Te comparto opciones destacadas del catalogo:',
-    list,
-    '',
-    profileHint,
-  ].join('\n');
+  return buildStructuredReply({
+    title: 'Estoy operando en modo local sin IA externa',
+    bullets: [
+      'Te comparto opciones destacadas del catalogo:',
+      list,
+      profileHint,
+    ],
+    question: '¿Deseas que te conecte con un asesor para avanzar hoy mismo?',
+  });
 }
 
 function looksLikeOwnerPropertyDescription(text) {
@@ -354,79 +454,103 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   if (!t) return null;
 
   if (/(hola|buenas|buenos dias|buenas tardes|buenas noches)\b/.test(t)) {
-    return 'Hola, soy Habby de Habita Peru. Te ayudo con compra, alquiler o venta de inmuebles. Dime en que distrito buscas y tu rango de presupuesto.';
+    return buildStructuredReply({
+      title: '¡Hola! Soy Habby, tu asesor inmobiliario de Habita',
+      bullets: [
+        'Te ayudo con compra, alquiler o venta de inmuebles en Peru.',
+        'Puedo recomendar opciones reales del catalogo y ayudarte a agendar visita.',
+      ],
+      question: '¿En que distrito buscas y cual es tu rango de presupuesto?',
+    });
   }
 
   if (/(asesor|humano|telefono|whatsapp|llamar|contactar)/.test(t)) {
-    return [
-      'Perfecto, te conecto con un asesor humano de Habita.',
-      `WhatsApp directo: ${waUrl}`,
-      '',
-      'Si deseas, tambien puedo adelantar tu perfil (operacion, distrito y presupuesto) para que te atiendan mas rapido.',
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Perfecto, te conecto con un asesor humano',
+      bullets: [
+        `WhatsApp directo: ${waUrl}`,
+        'Si deseas, tambien puedo adelantar tu perfil para una atencion mas rapida.',
+      ],
+      question: '¿Quieres que envie como prioridad tu operacion, distrito y presupuesto?',
+    });
   }
 
   if (/(agendar|agenda|cita|visita|reunion|horario|disponibilidad)/.test(t)) {
-    return [
-      'Claro, te ayudo con la cita. Para asegurar disponibilidad en tiempo real necesitamos estos datos:',
-      '1. Nombre completo',
-      '2. Celular',
-      '3. Correo (opcional)',
-      '4. Operacion: comprar, alquilar o vender',
-      '5. Distrito de interes',
-      '',
-      `Si prefieres atencion inmediata por asesor: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: '📅 Perfecto, avancemos con tu cita',
+      bullets: [
+        'Nombre completo',
+        'Celular',
+        'Correo (opcional)',
+        'Operacion: comprar, alquilar o vender',
+        'Distrito de interes',
+        `Si prefieres, tambien puedes coordinar por WhatsApp: ${waUrl}`,
+      ],
+      question: '¿Te parece si empezamos ahora?',
+    });
   }
 
   if (profile === 'vendedor' && /(vender|venta|tasar|valorar|valorizacion|publicar|mi casa|mi departamento|mi depa|mi inmueble)/.test(normalized)) {
-    return [
-      'Perfecto. Te ayudo con el proceso para vender tu inmueble con Habita.',
-      'Para una valuacion comercial inicial, comparte por favor:',
-      '1. Tipo de inmueble',
-      '2. Distrito o zona',
-      '3. Area aproximada y numero de ambientes',
-      '4. Precio esperado (opcional)',
-      '',
-      `Si deseas atencion inmediata, te conecto con un asesor: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Excelente decision: te ayudo a vender con enfoque comercial',
+      bullets: [
+        'Comparte tipo de inmueble.',
+        'Indica distrito o zona.',
+        'Menciona area aproximada y numero de ambientes.',
+        'Precio esperado (opcional).',
+        `Atencion comercial directa por WhatsApp: ${waUrl}`,
+      ],
+      question: '¿Quieres que lo derive de inmediato con un asesor comercial?',
+    });
   }
 
   if (profile === 'vendedor' && looksLikeOwnerPropertyDescription(normalized)) {
-    return [
-      'Perfecto, tomo los datos de tu inmueble para venta con Habita.',
-      'Con lo que indicas, el siguiente paso es una valuacion comercial con asesor.',
-      'Para continuar, confirma por favor: direccion exacta, numero de ambientes y precio esperado.',
-      `Si deseas atencion inmediata: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Muy bien, ya tengo un avance de tu inmueble',
+      bullets: [
+        'El siguiente paso es valuacion comercial con asesor.',
+        'Confirma direccion exacta, numero de ambientes y precio esperado.',
+        `Atencion inmediata: ${waUrl}`,
+      ],
+      question: '¿Te parece si avanzamos con la valuacion hoy?',
+    });
   }
 
   if (profile === 'agente' && /(agente|corredor|comision|captar|cliente|colaborar|alianza|trabajar con habita|inmueble de cliente)/.test(normalized)) {
-    return [
-      'Excelente, podemos colaborar contigo en la comercializacion de inmuebles.',
-      'Para revisar tu caso, comparteme por favor:',
-      '1. Tipo de inmueble y zona',
-      '2. Operacion (venta o alquiler)',
-      '3. Rango de precio',
-      '4. Si ya tienes propietario o cliente calificado',
-      '',
-      `Coordinamos por asesor comercial aqui: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Excelente, podemos colaborar contigo',
+      bullets: [
+        'Tipo de inmueble y zona.',
+        'Operacion (venta o alquiler).',
+        'Rango de precio.',
+        'Si ya tienes propietario o cliente calificado.',
+        `Coordinacion comercial directa por WhatsApp: ${waUrl}`,
+      ],
+      question: '¿Te coordino reunion con asesor comercial para cerrar condiciones?',
+    });
   }
 
   if (profile === 'agente' && looksLikeOwnerPropertyDescription(normalized)) {
-    return [
-      'Perfecto, revisemos tu oportunidad como agente con Habita.',
-      'Compárteme tipo de inmueble, zona, operacion y precio para evaluar encaje comercial.',
-      `Si prefieres, lo coordinamos directo con asesor comercial: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Perfecto, revisemos esta oportunidad comercial',
+      bullets: [
+        'Comparte tipo de inmueble, zona, operacion y precio.',
+        'Con eso evaluamos encaje y estrategia comercial.',
+        `Si prefieres, coordinamos directo con asesor: ${waUrl}`,
+      ],
+      question: '¿Quieres que lo evaluemos como prioridad esta semana?',
+    });
   }
 
   if (/(chiste|futbol|politica|receta|musica|tarea|programacion|codigo)/.test(t)) {
     const profileHint = profile === 'vendedor'
       ? 'si quieres vender, te explico como Habita acelera la comercializacion de tu inmueble.'
       : 'si buscas comprar o alquilar, te ayudo a filtrar por zona, presupuesto y tipo de propiedad.';
-    return `Puedo ayudarte solo en temas inmobiliarios de Habita. Pero con gusto ${profileHint}`;
+    return buildStructuredReply({
+      title: 'Puedo ayudarte en temas inmobiliarios de Habita',
+      bullets: [profileHint],
+      question: '¿Quieres que te recomiende opciones segun tu objetivo?',
+    });
   }
 
   if (profile === 'comprador') {
@@ -440,19 +564,25 @@ function buildRuleBasedReply({ text, profile, waUrl, properties }) {
   if (propertyReply) return propertyReply;
 
   if (profile === 'vendedor') {
-    return [
-      'Te acompano en la venta de tu inmueble con un enfoque comercial claro.',
-      'Si me compartes zona, tipo de inmueble y metraje, te doy una orientacion inicial.',
-      `Tambien puedes coordinar directo por WhatsApp: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Te acompano en la venta con enfoque comercial',
+      bullets: [
+        'Comparte zona, tipo de inmueble y metraje para orientacion inicial.',
+        `Tambien puedes coordinar directo por WhatsApp: ${waUrl}`,
+      ],
+      question: '¿Quieres una orientacion inicial ahora mismo?',
+    });
   }
 
   if (profile === 'agente') {
-    return [
-      'Te ayudo a estructurar una colaboracion comercial con Habita.',
-      'Cuantame tipo de inmueble, zona y operacion para orientarte mejor.',
-      `Si prefieres, coordinamos directo con un asesor: ${waUrl}`,
-    ].join('\n');
+    return buildStructuredReply({
+      title: 'Te ayudo a estructurar una colaboracion comercial',
+      bullets: [
+        'Cuentame tipo de inmueble, zona y operacion.',
+        `Si prefieres, coordinamos directo con asesor: ${waUrl}`,
+      ],
+      question: '¿Quieres que revisemos una oportunidad concreta?',
+    });
   }
 
   return null;
@@ -543,6 +673,12 @@ module.exports = async (req, res) => {
   const contextProperties = promptProperties.length
     ? promptProperties
     : properties.slice(0, CONTEXT_MAX_PROPERTIES);
+  const intent = detectIntent(lastUserMessage);
+  const uiPayload = buildUiPayload({
+    text: lastUserMessage,
+    properties: properties.length ? properties : contextProperties,
+    profile: normalizedProfile,
+  });
   const ruleReply = buildRuleBasedReply({
     text: lastUserMessage,
     profile: normalizedProfile,
@@ -555,6 +691,8 @@ module.exports = async (req, res) => {
       reply: ruleReply,
       provider: RULES_ONLY_MODE ? 'rules-only' : 'rule-based',
       bypassedLlm: true,
+      intent,
+      ui: uiPayload,
     });
   }
 
@@ -567,6 +705,8 @@ module.exports = async (req, res) => {
       }),
       provider: 'rules-only',
       bypassedLlm: true,
+      intent,
+      ui: uiPayload,
     });
   }
 
@@ -594,6 +734,7 @@ ${profilePrompt}
 - Si no hay propiedades que coincidan exactamente, sugiere las más cercanas
 - Responde entre 80 y 140 palabras. Si piden ficha detallada de una propiedad, puedes usar hasta 220 palabras
 - Cerrar siempre con una pregunta accionable de negocio
+- Mantén un formato presentable: encabezado corto + 2 a 4 bullets + cierre con pregunta
 
 ## REGLAS IMPORTANTES
 1. SOLO hablas de inmuebles y temas relacionados
@@ -601,6 +742,7 @@ ${profilePrompt}
 3. NUNCA inventes propiedades, precios, areas, metrajes ni documentacion
 4. Si un dato no existe en habita.pe, responde literalmente: "No especificado en habita.pe"
 5. Usa emojis con moderación — 📍🏠💰
+6. Usa emojis contextuales de forma consistente: 📍 ubicación, 💰 precio, 🏠 inmueble, 📅 cita
 
 ## MODO FICHA DETALLADA (cuando pregunten por un inmueble puntual)
 Responde siempre en este orden:
@@ -627,7 +769,8 @@ ${propertiesContext}
 - Listas cortas para múltiples propiedades
 - Por propiedad: nombre, precio, ubicación, características y URL
 - Cierra con una pregunta corta para seguir ayudando
-- Si no hay datos suficientes, primero pide maximo 2 datos concretos antes de responder`;
+- Si no hay datos suficientes, primero pide maximo 2 datos concretos antes de responder
+- Estructura ideal: encabezado + bullets claros + pregunta accionable final`;
 
   try {
     const result = await generateChatReply({
@@ -653,6 +796,8 @@ ${propertiesContext}
         provider: 'rules-fallback',
         bypassedLlm: true,
         llmAttempts: result.attempts || [],
+        intent,
+        ui: uiPayload,
       });
     }
 
@@ -660,6 +805,8 @@ ${propertiesContext}
       reply: result.reply,
       provider: result.provider,
       fallbackAttempts: result.attempts || [],
+      intent,
+      ui: uiPayload,
     });
 
   } catch (err) {
