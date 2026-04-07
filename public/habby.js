@@ -28,11 +28,14 @@
 
   /* ── Configuración ── */
   const DEFAULT_API_BASE = 'https://habby-chatbot.vercel.app/api';
-  const API_BASE     = trimTrailingSlash(window.HABBY_API_BASE || inferApiBaseFromScript() || DEFAULT_API_BASE);
-  const API_URL      = `${API_BASE}/chat`;
-  const LEADS_URL    = `${API_BASE}/leads`;
-  const AVAIL_URL    = `${API_BASE}/availability`;
-  const APPT_URL     = `${API_BASE}/appointments`;
+  const INFERRED_API_BASE = trimTrailingSlash(inferApiBaseFromScript());
+  const FORCED_API_BASE = trimTrailingSlash(window.HABBY_API_BASE || '');
+  const PRIMARY_API_BASE = FORCED_API_BASE || INFERRED_API_BASE || DEFAULT_API_BASE;
+  const API_BASE_CANDIDATES = Array.from(new Set([
+    PRIMARY_API_BASE,
+    DEFAULT_API_BASE,
+  ].filter(Boolean).map(trimTrailingSlash)));
+  let activeApiBase = API_BASE_CANDIDATES[0] || DEFAULT_API_BASE;
   const BOOKING_DAYS = 3;
   const BOOKING_MIN_DAYS = 1;
   const BOOKING_SLOT_MINUTES = 30;
@@ -91,6 +94,83 @@
     leadId: null,
     data: {},
   };
+
+  function buildEndpoint(base, path) {
+    const cleanBase = trimTrailingSlash(base || activeApiBase || DEFAULT_API_BASE);
+    const cleanPath = String(path || '').replace(/^\/+/, '');
+    return `${cleanBase}/${cleanPath}`;
+  }
+
+  function extractErrorMessage(data, rawText, status) {
+    if (data && typeof data === 'object') {
+      if (data.error) return String(data.error);
+      if (data.message) return String(data.message);
+    }
+
+    const raw = String(rawText || '').trim();
+    if (raw) return raw.slice(0, 180);
+    return `Error HTTP ${status}`;
+  }
+
+  async function readJsonSafe(response) {
+    const rawText = await response.text();
+    let data = null;
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = null;
+    }
+    return { data, rawText };
+  }
+
+  async function requestJsonWithFallback(path, init = {}) {
+    const retryStatuses = new Set([404, 408, 429, 500, 502, 503, 504]);
+    const bases = [activeApiBase, ...API_BASE_CANDIDATES.filter((base) => base !== activeApiBase)];
+    let lastError = null;
+
+    for (let i = 0; i < bases.length; i += 1) {
+      const base = bases[i];
+      const url = buildEndpoint(base, path);
+
+      try {
+        const response = await fetch(url, init);
+        const { data, rawText } = await readJsonSafe(response);
+
+        if (!response.ok) {
+          const err = new Error(extractErrorMessage(data, rawText, response.status));
+          err.status = response.status;
+          err.base = base;
+          if (i < bases.length - 1 && retryStatuses.has(response.status)) {
+            lastError = err;
+            continue;
+          }
+          throw err;
+        }
+
+        if (!data || typeof data !== 'object') {
+          const err = new Error('Respuesta invalida del servidor.');
+          err.status = response.status;
+          err.base = base;
+          if (i < bases.length - 1) {
+            lastError = err;
+            continue;
+          }
+          throw err;
+        }
+
+        activeApiBase = base;
+        return { data, status: response.status, base };
+      } catch (err) {
+        if (i < bases.length - 1) {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw lastError || new Error('No se pudo conectar con el servidor.');
+  }
 
   function trackEvent(name, payload = {}) {
     const event = {
@@ -388,7 +468,7 @@
   async function createLeadAndOfferSlots() {
     showTyping();
     try {
-      const leadRes = await fetch(LEADS_URL, {
+      const leadResult = await requestJsonWithFallback('leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,8 +479,8 @@
           district: booking.data.district || null,
         }),
       });
-      const leadData = await leadRes.json();
-      if (!leadRes.ok || !leadData?.lead?.id) {
+      const leadData = leadResult.data;
+      if (!leadData?.lead?.id) {
         throw new Error(leadData?.error || 'No se pudo registrar el lead.');
       }
 
@@ -412,11 +492,8 @@
         slot_minutes: String(BOOKING_SLOT_MINUTES),
         limit: String(BOOKING_MAX_SLOTS),
       });
-      const availRes = await fetch(`${AVAIL_URL}?${params.toString()}`);
-      const availData = await availRes.json();
-      if (!availRes.ok) {
-        throw new Error(availData?.error || 'No se pudo consultar disponibilidad.');
-      }
+      const availResult = await requestJsonWithFallback(`availability?${params.toString()}`);
+      const availData = availResult.data;
 
       const slots = (availData.slots || [])
         .slice()
@@ -457,7 +534,7 @@
   async function reserveSlot(slot) {
     showTyping();
     try {
-      const res = await fetch(APPT_URL, {
+      const result = await requestJsonWithFallback('appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -468,17 +545,8 @@
           notes: 'Cita agendada desde widget',
         }),
       });
-
-      const data = await res.json();
+      const data = result.data;
       hideTyping();
-
-      if (!res.ok) {
-        addMsg('bot', `⚠️ ${data?.error || 'No se pudo agendar la cita.'}`);
-        if (res.status === 409) {
-          await createLeadAndOfferSlots();
-        }
-        return;
-      }
 
       addMsg('bot', data.uiMessage || 'Tu cita fue agendada correctamente.');
       trackEvent('booking_confirmed', {
@@ -489,9 +557,15 @@
         addMsg('bot', 'También envié la confirmación a tu correo.');
       }
       resetBooking();
-    } catch {
+    } catch (err) {
       hideTyping();
-      addMsg('bot', '⚠️ No se pudo agendar por un error de conexión. Intenta de nuevo.');
+      if (Number(err?.status) === 409) {
+        addMsg('bot', `⚠️ ${String(err.message || 'Ese horario ya no esta disponible.')}`);
+        await createLeadAndOfferSlots();
+        return;
+      }
+
+      addMsg('bot', `⚠️ ${String(err?.message || 'No se pudo agendar por un error de conexión. Intenta de nuevo.')}`);
       resetBooking();
     }
   }
@@ -632,13 +706,12 @@
     showTyping(isPropertyIntent(t));
 
     try {
-      const r = await fetch(API_URL, {
+      const result = await requestJsonWithFallback('chat', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ messages: history, profile }),
-        
       });
-      const d = await r.json();
+      const d = result.data;
       hideTyping();
 
       if (d.reply) {
@@ -648,9 +721,13 @@
       } else {
         addMsg('bot', '⚠️ Tuvimos un inconveniente al procesar tu consulta. Si quieres, lo intentamos de nuevo en unos segundos.');
       }
-    } catch {
+    } catch (err) {
       hideTyping();
-      addMsg('bot', '⚠️ Parece que hubo un problema de conexión. Verifica tu internet y seguimos en segundos.');
+      if (Number(err?.status) === 429) {
+        addMsg('bot', '⚠️ Estamos atendiendo muchas consultas. Intenta nuevamente en unos segundos.');
+      } else {
+        addMsg('bot', `⚠️ ${String(err?.message || 'Parece que hubo un problema de conexión. Verifica tu internet y seguimos en segundos.')}`);
+      }
     }
 
     loading = false;
